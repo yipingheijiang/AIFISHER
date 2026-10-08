@@ -104,12 +104,15 @@ export function createWindowsDpapiProtector({ helperPath, powershellPath } = {})
   });
 }
 
-function normalizeCredentials(value, allowedKeys) {
+function normalizeCredentials(value, allowedKeys, { readingLegacy = false } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Provider credential record is invalid');
   }
   const normalized = {};
   for (const [key, rawValue] of Object.entries(value)) {
+    // Retired relay credentials must not prevent loading unrelated DPAPI-protected keys.
+    // Ignore them on read without rewriting the encrypted file; writes remain strict.
+    if (readingLegacy && key === 'RELAY_API_KEY' && !allowedKeys.has(key)) continue;
     if (!allowedKeys.has(key) || typeof rawValue !== 'string') {
       throw new Error('Provider credential record contains an unsupported field');
     }
@@ -153,7 +156,7 @@ export function createProviderCredentialStore({ filePath, allowedKeys, protector
     }
     const plaintext = await activeProtector.unprotect(contents.subarray(FILE_MAGIC.length));
     try {
-      return normalizeCredentials(JSON.parse(plaintext.toString('utf8')), keySet);
+      return normalizeCredentials(JSON.parse(plaintext.toString('utf8')), keySet, { readingLegacy: true });
     } finally {
       plaintext.fill(0);
     }

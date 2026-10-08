@@ -1,5 +1,9 @@
 node_modules/
 runtime/
+!scripts/runtime/
+!scripts/runtime/*.mjs
+!server/runtime/
+!server/runtime/*.js
 bin/
 dist/
 .desktop-dev/
@@ -15,3 +19,5 @@ logs/
 *.db*
 apps/desktop/launcher/dist/
 *.tsbuildinfo
+
+.ops/

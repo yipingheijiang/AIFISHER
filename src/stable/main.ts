@@ -3,7 +3,6 @@ import { createAgentConversation } from './agent/agentConversation';
 import { installDramaCanvasBridge } from './agent/dramaCanvasBridge';
 import { installDramaConversationShortcut } from './agent/dramaConversationShortcut';
 import { installDramaConversationTools } from './agent/dramaConversationTools';
-import { installRelayAccountCenter } from './account/relayAccountCenter';
 import { installStableCanvasClipboard } from './canvas/canvasClipboard';
 import { installStableCanvasConnections } from './canvas/canvasConnections';
 import { installStableCanvasContextActions } from './canvas/canvasContextActions';
@@ -22,7 +21,6 @@ import { installMidjourneyReferenceAdapter } from './generation/midjourneyRefere
 import { installImageResultHistory } from './generation/imageResultHistory';
 import { installAgentModelAvailability } from './generation/agentModelAvailability';
 import { installModelPricing } from './generation/modelPicker';
-import { installFeedbackCenter } from './feedback/feedbackCenter';
 import { createSourceSettingsClient } from './generation/sourceSettingsClient';
 import { installVideoModeAdapter } from './generation/videoMode';
 import { installStableDesignSystem } from './design/designSystem';
@@ -49,11 +47,9 @@ import { installCanvasAppearance } from './appearance/canvasAppearance';
 import { installPromptAssistant } from './prompt/promptAssistant';
 import { installPromptExpand } from './prompt/promptExpand';
 import { installPromptPresets } from './prompt/promptPresets';
-import { installLocalProfile } from './profile/localProfile';
 import { installStoryboardClient } from './storyboard/storyboardClient';
 import { installAgentSkillClient } from './skills/skillClient';
 import { installSkillCommunity } from './skills/skillCommunity';
-import { installDesktopUpdateSurface } from './update/desktopUpdate';
 
 // 设置页和发行门禁都读取同一个构建戳；必须先于设计增强安装，避免首次打开设置时
 // 仍然显示旧版或空版本。
@@ -62,17 +58,11 @@ document.documentElement.dataset.fisheraiBuild = __FISHERAI_BUILD__;
 installWorkflowRecoveryFetch();
 const dramaCanvasBridge = installDramaCanvasBridge();
 installBackendReconnectNotice();
-installDesktopUpdateSurface({
-  dismissible: true,
-  beforeApply: () => window.__FISHERAI_BEFORE_DESKTOP_UPDATE__?.(),
-});
-// Account preferences load before any enhancement reads them (ADR-0035): one backend request.
+// Local workspace preferences load before any enhancement reads them (ADR-0035): one backend request.
 await installPreferenceStore(window.fetch.bind(window));
 installCanvasAppearance();
 const sourceSettingsClient = createSourceSettingsClient();
 installAgentModelAvailability(sourceSettingsClient);
-installRelayAccountCenter();
-installFeedbackCenter();
 installAgentClient();
 const agentSkillClient = installAgentSkillClient();
 installSkillCommunity(agentSkillClient);
@@ -114,7 +104,6 @@ installVideoWorkflows();
 installPromptAssistant();
 installPromptExpand();
 installPromptPresets();
-installLocalProfile();
 installStoryboardClient();
 installMediaEditing();
 startStableMediaEnhancement({ renderer: new NativeStableMediaRenderer() });

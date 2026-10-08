@@ -10,8 +10,6 @@ const RECOVERABLE_PROVIDERS = {
   SeedVr2ImageProvider: 'image',
   DreaminaCliImageProvider: 'image',
   DreaminaCliVideoProvider: 'video',
-  RelayVideoProvider: 'video',
-  RelayImageProvider: 'image',
   RunningHubVideoProvider: 'video',
   RunningHubGlobalVideoProvider: 'video',
   RunningHubImageProvider: 'image',
@@ -100,6 +98,10 @@ export function createGenerationTaskRecovery({
 }) {
   const observations = new Map();
   return async (task, appContext) => {
+    if (task?.providerName?.startsWith('Relay') && !['success', 'failed', 'cancelled'].includes(task.status)) {
+      return { ...task, status: 'failed', code: 'LOCAL_EDITION_SOURCE_REMOVED',
+        error: '本地版已停用此生成来源，原项目和素材仍保留。请手动选择独立供应商。', retryable: false, recoveryPending: false };
+    }
     if (submissionUnconfirmed(task)) return { ...waiting(task), error: task.error };
     if (!canRecoverGenerationTask(task)) return task;
     const key = JSON.stringify([task.nodeId, task.attemptId]);

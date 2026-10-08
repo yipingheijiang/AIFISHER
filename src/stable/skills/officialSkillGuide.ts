@@ -4,38 +4,13 @@ import { productionProfileForSkill } from '../../shared/officialProductionProfil
 export function createOfficialSkillGuide(skill: { slug: string; source?: string }) {
   const profile = skill.source === 'official' ? productionProfileForSkill(skill.slug) : undefined;
   if (!profile) return null;
-  const assetsOnly = profile.mode === 'assets';
-  const high = profile.id === 'minimax-drama-high';
-  const steps = assetsOnly
-    ? [
-        ['描述人物和场景', '选择打斗武戏，在 Agent 中说明人物外观、场景和打斗设想，无需上传剧本。'],
-        ['审阅资产计划', '发送要求后查看人物、场景清单；继续对话可修改计划。'],
-        [
-          '确认并生成资产',
-          '展开“查看计划与执行选项”，确认资产清单，选择资产并确认本批调用，再点击“生成所选资产”。',
-        ],
-        [
-          '创建武戏节点',
-          '资产生成并显示在画布后，确认资产并创建武戏节点，系统连接人物与场景图片。',
-        ],
-        ['手动运行视频', '在画布武戏节点内检查提示词、参考图和参数，再自行点击“运行”。'],
-      ]
-    : [
-        [
-          '添加剧本与要求',
-          `选择${profile.name}，粘贴剧本或点击“添加剧本”上传 TXT、Markdown、DOCX，再输入制作要求并发送。`,
-        ],
-        ['对话完善计划', '查看人物、场景和文戏分段；继续对话调整内容，确认后再进入资产生成。'],
-        [
-          '确认并生成资产',
-          '展开“查看计划与执行选项”，确认资产清单，选择资产并确认本批调用，再点击“生成所选资产”。',
-        ],
-        [
-          '创建文戏节点',
-          `资产生成并显示在画布后，确认资产并创建文戏节点，系统连接参考图并填入分段提示词；使用${high ? '高配' : '低配'} RH 文戏应用。`,
-        ],
-        ['手动运行视频', '在画布文戏节点内检查提示词、参考图和参数，再自行点击“运行”。'],
-      ];
+  const steps = [
+    ['提供素材与要求', '描述人物和场景，或上传剧本；文件由本机解析。'],
+    ['完善计划和提示词', '使用自己配置的文本模型讨论资产、分段与连续性。'],
+    ['在画布手动制作', '选择自己的独立图像模型或本地工作流，检查参数后运行。'],
+    ['整理参考素材', '把实际完成的图片与音频接入所选视频或 ComfyUI 工作流。'],
+    ['检查后运行', '核对提示词、素材与供应商费用，再手动运行并查看实际结果。'],
+  ];
   const root = document.createElement('section');
   root.className = 'fisher-official-guide';
   root.dataset.fisheraiSkillGuide = skill.slug;
@@ -64,7 +39,7 @@ export function createOfficialSkillGuide(skill: { slug: string; source?: string 
   inner.className = 'fisher-official-guide-inner';
   const prerequisites = document.createElement('p');
   prerequisites.textContent =
-    '开始前：在设置中配置 API 文本模型、RunningHub 和即梦 5 API 所需的连接。Agent 请使用 API 文本模型来源。';
+    '本地版已停用依赖原平台场景线路的自动制作组合。计划和提示词可继续使用；生成请自行选择本地服务或独立供应商。';
   const list = document.createElement('ol');
   for (const [title, description] of steps) {
     const item = document.createElement('li');

@@ -28,7 +28,6 @@ const AGENT_TEXT_PROVIDERS = new Set([
   'DeepSeekProvider',
   'GlmTextProvider',
   'KimiTextProvider',
-  'RelayTextProvider',
 ]);
 const REQUIRED_SECRETS_BY_PROVIDER = new Map(
   GENERATION_PROVIDER_CONTRACTS.map((contract) => [contract.name, contract.requiredSecrets]),
@@ -83,7 +82,7 @@ function normalizeMedia(value) {
     }
     if (item?.type !== 'image') throw new AgentRequestError('附件类型无效');
     // Prefer the complete URL when both representations are present. The URL
-    // carries its MIME type and can be uploaded directly by Relay; retain the
+    // carries its MIME type and can be uploaded directly by the provider; retain the
     // legacy bare Base64 value as a fallback for older clients. Emit exactly
     // one representation: vision adapters reject ambiguous url + base64 pairs.
     const candidates = [item.url, item.base64]
@@ -151,7 +150,6 @@ function normalizeCredentials(getCredentials) {
     DEEPSEEK_API_KEY: String(credentials.DEEPSEEK_API_KEY || credentials.deepSeekApiKey || '').trim(),
     ZHIPU_API_KEY: String(credentials.ZHIPU_API_KEY || credentials.zhipuApiKey || '').trim(),
     MOONSHOT_API_KEY: String(credentials.MOONSHOT_API_KEY || credentials.moonshotApiKey || '').trim(),
-    RELAY_API_KEY: String(credentials.RELAY_API_KEY || credentials.relayApiKey || '').trim(),
     LOGS_DIR: String(credentials.LOGS_DIR || credentials.logsDirectory || '').trim(),
   };
 }
@@ -234,7 +232,7 @@ async function generateWithCurrentAgent(request) {
       url: endpoint.url,
       timeEstimate: request.modelConfig.timeEstimate || '2min',
       useProxy: request.modelConfig.useProxy,
-      // Prefer the complete data URL so Relay does not try to resolve a bare
+      // Prefer the complete data URL so providers do not try to resolve a bare
       // Base64 value as a filesystem path.
       imageBase64: request.media.map((item) => item.url || item.base64).filter(Boolean),
       ...request.modelParams,

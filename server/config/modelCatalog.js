@@ -144,7 +144,7 @@ export function loadModelCatalog({
 } = {}) {
   try {
     const snapshot = JSON.parse(fileSystem.readFileSync(snapshotPath, 'utf8'));
-    if (snapshot && typeof snapshot === 'object') return applyModelIdOverrides(snapshot);
+    if (snapshot && typeof snapshot === 'object') return applyModelIdOverrides(Object.fromEntries(Object.entries(snapshot).filter(([, model]) => model.source !== 'relay' && !model.provider?.startsWith('Relay'))));
     logger.error('[ModelCatalog] 快照格式非法，云端模型将全部不可用：', snapshotPath);
   } catch (error) {
     logger.error(

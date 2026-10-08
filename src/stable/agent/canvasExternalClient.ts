@@ -37,7 +37,7 @@ export function createCanvasExternalClient(projectId: string, execute: CanvasAct
       runSignal.addEventListener('abort', finish, { once: true });
       if (runSignal.aborted) finish();
     });
-    const ownHeartbeat = setInterval(() => { if (!stopped && generation === lifecycle) void api('heartbeat').catch(() => publish({ error: '连接保活失败，请核对本机登录状态。' })); }, 10000);
+    const ownHeartbeat = setInterval(() => { if (!stopped && generation === lifecycle) void api('heartbeat').catch(() => publish({ error: '连接保活失败，请核对本地工作区连接状态。' })); }, 10000);
     heartbeat = ownHeartbeat;
     try {
       // Registration does not steal another window's active ownership. Pairing is the explicit activation.
@@ -79,7 +79,7 @@ export function createCanvasExternalClient(projectId: string, execute: CanvasAct
     control, start, stop() { stopped = true; running = false; lifecycle++; clearInterval(heartbeat); abort.abort(); for (const action of actions.values()) action.abort(); void fetcher('/api/agent/external/release', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId, projectId }) }).catch(() => {}); },
     async activate() {
       try { await api('activate'); publish({ error: '' }); await refresh(); }
-      catch { publish({ error: '暂时无法接管，请等待正在执行的操作结束并核对登录状态。' }); }
+      catch { publish({ error: '暂时无法接管，请等待正在执行的操作结束并核对工作区连接状态。' }); }
     },
     async pair(manageProjects: boolean) {
       publish({ command: '', codexCommand: '', desktopCommand: '', expiresAt: 0 });
@@ -88,13 +88,13 @@ export function createCanvasExternalClient(projectId: string, execute: CanvasAct
         const pairing = await api<{ command: string; codexCommand?: string; desktopCommand?: string; expiresAt: number }>('pair', { manageProjects });
         publish({ ...pairing, error: '' }); await refresh();
         if (!state.connected && !stopped) void start();
-      } catch { publish({ error: '无法配对，请保持目标项目窗口打开并检查本机登录状态。' }); }
+      } catch { publish({ error: '无法配对，请保持目标项目窗口打开并检查本地工作区连接状态。' }); }
     },
     async revoke(id: string) {
       for (const action of actions.values()) action.abort();
       if (id) onRevokeSession(`external-${id}`);
       try { await api('revoke', { id }); publish({ command: '', codexCommand: '', desktopCommand: '', expiresAt: 0 }); await refresh(); }
-      catch { publish({ error: '撤销结果未确认，请关闭画布或退出登录以终止连接。' }); }
+      catch { publish({ error: '撤销结果未确认，请关闭画布以终止连接。' }); }
     },
   };
 }

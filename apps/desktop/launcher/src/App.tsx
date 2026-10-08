@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { StartupStatus } from './StartupStatus';
-import { UpdateDownloadFallback } from './UpdateDownloadFallback';
 import { desktopShell } from './desktopShell';
 import { createCanvasEntry } from './canvasEntry';
 
@@ -17,8 +16,8 @@ export default function App() {
     working.current = true;
     setProblem('');
     try {
-      // This only reads/creates the encrypted local device identity; it never waits for the network.
-      await desktopShell().identity.restore();
+      // Read the stable local workspace UUID; no cloud session exists.
+      await desktopShell().workspace.restore();
       entry.reset();
       const result = await entry.open(userInitiated);
       if (!result?.opened) setProblem(result?.message || '本机工作区未能打开，请重试。');
@@ -43,7 +42,6 @@ export default function App() {
         <p role="alert">{problem}</p>
         <p>项目与 API Key 保留在本机，无需注册或登录。</p>
         <button className="primary-button" onClick={() => void enter(true)}>重试打开画布</button>
-        <UpdateDownloadFallback />
       </section>
     </section>
   </main>;

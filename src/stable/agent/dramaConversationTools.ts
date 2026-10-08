@@ -395,6 +395,8 @@ export function installDramaConversationTools(
       const profile = productionProfileForBundle(plan.bundleId);
       const assetOnly = profile?.mode === 'assets';
       const latest = latestAssets(state);
+      const pendingLocalScene = plan.assets.some(asset => asset.kind === 'scene' &&
+        (latest.get(asset.id)?.status !== 'success' || latest.get(asset.id)?.planRevision !== plan.revision));
       const title = element('strong', plan.title);
       card.append(title);
       const completed = plan.assets.filter(
@@ -406,6 +408,8 @@ export function installDramaConversationTools(
       );
       progress.dataset.fisheraiDramaProgress = 'true';
       card.append(progress);
+      if (pendingLocalScene) card.append(element('p',
+        '本地版已停用依赖原场景线路的自动制作组合。计划和提示词仍可使用；请在画布选择自己的模型与工作流手动制作。'));
       const details = element('details');
       details.dataset.fisheraiDramaDetails = 'plan';
       details.open = expanded.get('plan') ?? false;
@@ -420,13 +424,13 @@ export function installDramaConversationTools(
       );
       for (const asset of plan.assets) {
         const receipt = latest.get(asset.id);
-        const eligible = !receipt || (receipt.status === 'failed' && receipt.retryable === true);
+        const eligible = !pendingLocalScene && asset.kind !== 'scene' && (!receipt || (receipt.status === 'failed' && receipt.retryable === true));
         const row = element('div');
         row.dataset.fisheraiDramaAsset = asset.id;
         row.className = 'fisher-drama-inline-asset';
         row.append(
           check(
-            `${asset.name} · ${asset.kind === 'character' ? '人物 RH' : '场景 即梦 5 API'}${receipt ? ` · ${LABELS[receipt.status] || receipt.status}` : ''}`,
+            `${asset.name} · ${asset.kind === 'character' ? '人物 RH' : '场景自动线路已移除'}${receipt ? ` · ${LABELS[receipt.status] || receipt.status}` : ''}`,
             `选择资产 ${asset.name}`,
             selected.has(asset.id),
             (value) => {
@@ -487,7 +491,7 @@ export function installDramaConversationTools(
         ),
       );
       const eligibleIds = plan.assets
-        .filter((asset) => !latest.has(asset.id))
+        .filter((asset) => !pendingLocalScene && asset.kind !== 'scene' && !latest.has(asset.id))
         .map((asset) => asset.id)
         .slice(0, MAX_BATCH);
       details.append(
@@ -503,12 +507,12 @@ export function installDramaConversationTools(
           disabled || !eligibleIds.length,
         ),
       );
-      const targets = plan.assets.filter((asset) => selected.has(asset.id));
+      const targets = plan.assets.filter((asset) => !pendingLocalScene && asset.kind !== 'scene' && selected.has(asset.id));
       const targetLabel = targets.map((asset) => asset.name).join('、') || '尚未选择';
       details.append(
         element(
           'p',
-          `本批：${targetLabel}。人物使用官方人物 RH 工作流，场景使用即梦 5 API；相应提示词将发送到对应服务。每项最多提交 1 次，每批最多 ${MAX_BATCH} 项。失败或结果未知即停止后续。`,
+          `本批：${targetLabel}。人物使用已配置的 RunningHub 工作流；相应提示词将发送到该供应商。每项最多提交 1 次，每批最多 ${MAX_BATCH} 项。失败或结果未知即停止后续。`,
         ),
       );
       details.append(

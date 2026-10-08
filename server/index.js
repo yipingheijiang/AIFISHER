@@ -1,3 +1,4 @@
+import './security/installOutboundPolicy.js';
 import { createLibTvCliRuntime, createLibTvCliRouter } from './local/libTvCliRuntime.js';
 // Load environment variables FIRST before any other imports
 import dotenv from 'dotenv';
@@ -67,7 +68,6 @@ import controllerExitGuard from './local/controllerExitGuard.cjs';
 import { createComfyExtensionInstaller } from './local/comfyExtensionInstaller.js';
 import { createDreaminaCliInstaller } from './local/dreaminaCliInstaller.js';
 import { createRequestContextMiddleware, installSecureConsole } from './security/requestContext.js';
-import { createModelCallReporter } from './telemetry/modelCallReporter.js';
 import { createPreferenceRouter, createPreferenceStore } from './preferences/preferenceStore.js';
 import { createBackgroundRouter } from './appearance/backgroundRouter.js';
 import { createBackgroundStore } from './appearance/backgroundStore.js';
@@ -75,16 +75,10 @@ import { inspectLocalAuthenticationConfiguration } from './security/localAuthent
 import {
     attachActiveUserContext,
     createActiveUserContext,
-    createExactLocalBoundary,
-    getAuthenticatedRequest
+    createExactLocalBoundary
 } from './security/localAuthentication.js';
 import { createPublicLibraryGuard } from './security/publicLibraryGuard.js';
 import { createSafeProxyRouter } from './security/safeProxyRouter.js';
-import { createIdentityAccountRouter } from './account/identityAccountRouter.js';
-import { createRelayAccountAdapter } from './account/relayAccountAdapter.js';
-import { createRelayAccountRouter } from './account/relayAccountRouter.js';
-import { RelayAccountService } from './account/relayAccountService.js';
-import { RelayAccountStore } from './account/relayAccountStore.js';
 import { createDiagnosticsRouter } from './diagnostics/diagnosticsRouter.js';
 import { createThumbnailCache, ThumbnailCacheError } from './media/thumbnailCache.js';
 import { createMediaAssetRouter } from './media/mediaAssetRouter.js';
@@ -205,8 +199,8 @@ function startLockedServer() {
     }));
     lockedApp.use(['/api', '/library', '/diagnostics'], (_request, response) => {
         response.status(401).json({
-            error: '需要登录后访问',
-            code: 'AUTHENTICATION_REQUIRED'
+            error: '本机工作区尚未就绪，请从桌面入口启动。',
+            code: 'LOCAL_WORKSPACE_REQUIRED'
         });
     });
     if (process.env.NODE_ENV === 'production') {
@@ -231,22 +225,13 @@ process.on('uncaughtException', (err) => {
 });
 
 const app = express();
-// The main process starts this backend for one signed-in user and restarts it on an account
-// change, so the user, the directories and the token source are fixed for its lifetime.
+// Each backend belongs to one local workspace, fixed until the desktop switches workspaces.
 const activeUserContext = createActiveUserContext({
     activeOpaqueUserId: authenticationConfiguration.activeOpaqueUserId,
     userScopeResolver: authenticationConfiguration.userScopeResolver,
-    getAccessToken: () => parentChannel.requestAccessToken()
+    getAccessToken: async () => null
 });
-const { identityProfileClient, identityAccountClient } = authenticationConfiguration;
-if (!identityAccountClient) {
-    console.log('[Identity] 未配置 Identity 地址：账号资料、意见反馈与调用遥测暂不可用');
-}
-const modelCallReporter = identityAccountClient ? createModelCallReporter({
-    identityAccountClient,
-    getAccessToken: activeUserContext.getAccessToken,
-    clientVersion: PRODUCT_VERSION
-}) : null;
+const modelCallReporter = null;
 const canvasExternalService = createCanvasExternalService({ onRevokeSession: (projectId, sessionId) => app.locals.GENERATION_BUDGETS?.revokeSession(projectId, sessionId) });
 
 const LOGS_DIR = RUNTIME_PATHS.LOGS_DIR;
@@ -281,26 +266,9 @@ Object.defineProperties(global, {
     }
 });
 
-const relayAccountStore = new RelayAccountStore({
-    privateDirectory: RUNTIME_PATHS.PRIVATE_DIR,
-    opaqueUserId: RUNTIME_PATHS.ACTIVE_OPAQUE_USER_ID
-});
-const relayAccountBaseUrl = process.env.RELAY_BASE_URL
-    || 'https://api.work-fisher.com';
-const relayAccountService = new RelayAccountService({
-    store: relayAccountStore,
-    adapter: createRelayAccountAdapter({
-        apiKey: () => process.env.RELAY_API_KEY,
-        baseUrl: relayAccountBaseUrl,
-        allowedOrigins: [new URL(relayAccountBaseUrl).origin]
-    })
-});
-relayAccountService.initialize();
-
 const generationRuntime = createGenerationRuntime({
     libraryDirectory: BASE_LIBRARY_DIR,
-    parseTimeToMs: (timeEstimate) => BaseProvider.parseTimeToMs(timeEstimate),
-    onTaskChange: (task) => relayAccountService.observeGenerationTask(task)
+    parseTimeToMs: (timeEstimate) => BaseProvider.parseTimeToMs(timeEstimate)
 });
 const executionWorkflowRuntime = await createExecutionWorkflowRuntime({
     libraryDirectory: BASE_LIBRARY_DIR,
@@ -388,8 +356,6 @@ app.get('/readyz', (_request, response) => {
 app.use(createRequestContextMiddleware());
 app.use(['/api', '/library', '/diagnostics'], attachActiveUserContext(activeUserContext));
 app.get('/api/media/thumbnail', serveMediaThumbnail);
-app.use(createIdentityAccountRouter({ identityProfileClient, identityAccountClient }));
-app.use(createRelayAccountRouter({ service: relayAccountService }));
 // Workflow import and test configuration have stricter route-level body limits.
 // They must be mounted before the legacy 200 MiB parser so those limits apply
 // before any large request is buffered in memory.
@@ -401,7 +367,6 @@ const getAgentCredentials = () => ({
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
     ZHIPU_API_KEY: process.env.ZHIPU_API_KEY,
     MOONSHOT_API_KEY: process.env.MOONSHOT_API_KEY,
-    RELAY_API_KEY: process.env.RELAY_API_KEY,
     LOGS_DIR
 });
 const dramaPlanStore = createDramaPlanStore({ libraryDirectory: getWorkspacePaths().LIBRARY_DIR });
@@ -542,11 +507,6 @@ app.locals.LOGS_DIR = LOGS_DIR;
 for (const key of USER_PROVIDER_SECRET_KEYS) {
     Object.defineProperty(app.locals, key, { get: () => process.env[key] });
 }
-app.locals.RELAY_BASE_URL = relayAccountBaseUrl;
-app.locals.relayAccountActivity = Object.freeze({
-  submitted: (task) => relayAccountService.observeUpstreamTask(task),
-  settled: (receipt) => relayAccountService.applyFinalReceipt(receipt),
-});
 app.locals.TOS_BUCKET = process.env.TOS_BUCKET;
 app.locals.TOS_ENDPOINT = process.env.TOS_ENDPOINT;
 app.locals.TOS_REGION = process.env.TOS_REGION;
@@ -771,44 +731,18 @@ app.use('/api/config', configRoutes);
 
 // 设置页按「站」分块渲染需要知道每站有哪些模型，这个对应关系只有后端目录里有。
 app.use('/api', createModelSourceRouter({
-    getProviderConfiguration: async (request, { waitForFresh = true } = {}) => {
-        const requestIdentity = getAuthenticatedRequest(request);
-        relayAccountService.assertUser(requestIdentity.identity.opaqueUserId);
-        if (!waitForFresh) {
-            // 节点首屏只读本机可信状态。即梦 CLI 探针和 Identity 绑定复核在后台刷新，
-            // 不能让 15 秒 CLI 命令、向主进程取 Token 或远端网络挡住模型名称本身。
-            const relayConfiguration = await relayAccountService.getBindingConfiguration({
-                refresh: false
-            });
+    getProviderConfiguration: async (_request, { waitForFresh = true } = {}) => {
+        if (waitForFresh) await Promise.all([dreaminaCliInstaller.isAuthenticated(), libTvCli.isAuthenticated()]);
+        else {
             void dreaminaCliInstaller.isAuthenticated().catch(() => false);
             void libTvCli.isAuthenticated().catch(() => false);
-            void requestIdentity.getAccessToken()
-                .then((accessToken) => relayAccountService.getBindingConfiguration({
-                    accessToken,
-                    refresh: true
-                }))
-                .catch(() => undefined);
-            const dreaminaAuthenticated = dreaminaCliInstaller.getCachedAuthentication();
-            return {
-                LibTvCliImageProvider: libTvCli.getCachedAuthentication(),
-                LibTvCliVideoProvider: libTvCli.getCachedAuthentication(),
-                DreaminaCliImageProvider: dreaminaAuthenticated,
-                DreaminaCliVideoProvider: dreaminaAuthenticated,
-                ...relayConfiguration
-            };
         }
-        const [dreaminaAuthenticated, relayConfiguration] = await Promise.all([
-            dreaminaCliInstaller.isAuthenticated(),
-            requestIdentity.getAccessToken().then((accessToken) =>
-                relayAccountService.getBindingConfiguration({ accessToken })),
-            libTvCli.isAuthenticated()
-        ]);
+        const dreaminaAuthenticated = dreaminaCliInstaller.getCachedAuthentication();
         return {
             LibTvCliImageProvider: libTvCli.getCachedAuthentication(),
             LibTvCliVideoProvider: libTvCli.getCachedAuthentication(),
             DreaminaCliImageProvider: dreaminaAuthenticated,
             DreaminaCliVideoProvider: dreaminaAuthenticated,
-            ...relayConfiguration
         };
     }
 }));

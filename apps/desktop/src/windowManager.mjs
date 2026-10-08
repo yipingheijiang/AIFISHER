@@ -1,4 +1,5 @@
 import { APP_HOST, APP_ORIGIN, APP_SCHEME } from './appProtocol.mjs';
+import { isRemovedServiceHost } from '../../../server/security/offlinePolicy.js';
 
 export const CANVAS_URL = `${APP_ORIGIN}/`;
 export const LAUNCHER_URL = `${APP_ORIGIN}/launcher/`;
@@ -28,7 +29,8 @@ export function isAppUrl(value) {
 
 export function isExternalUrl(value) {
   try {
-    return EXTERNAL_PROTOCOLS.has(new URL(value).protocol);
+    const url = new URL(value);
+    return EXTERNAL_PROTOCOLS.has(url.protocol) && !isRemovedServiceHost(url.hostname);
   } catch {
     return false;
   }

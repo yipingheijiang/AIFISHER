@@ -69,15 +69,10 @@ export function installAgentModelAvailability(
     },
   };
   target.__FISHERAI_AGENT_MODEL_AVAILABILITY__ = bridge;
-  // Provider settings and the account centre use separate UI surfaces. The
-  // latter emits `aifisher:relay-binding-changed` after a local Relay key is
-  // saved, so listen to both events or Agent would keep the pre-save model
-  // snapshot until the settings page is opened again.
   const refreshOnSourceChange = () => {
     void bridge.refresh().catch(() => undefined);
   };
   target.addEventListener('fisherai:model-sources-changed', refreshOnSourceChange);
-  target.addEventListener('aifisher:relay-binding-changed', refreshOnSourceChange);
   void bridge.refresh().catch(() => undefined);
   return bridge;
 }

@@ -135,7 +135,7 @@ export function useCanvasViewport(
       : (adapter ? adapter.zoomAt(rendered.current, event, bounds) : zoomViewportAtPoint(rendered.current, event, {
         x: event.clientX - bounds.left, y: event.clientY - bounds.top,
       }));
-    // Match the relay's React Flow viewport: paint the input immediately,
+    // Match the React Flow viewport: paint the input immediately,
     // without a second smoothing animation restarting after every wheel notch.
     rendered.current = next;
     writeTransform(next);

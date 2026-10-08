@@ -1,3 +1,4 @@
+import { assertIndependentUrl } from '../security/offlinePolicy.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,7 +36,6 @@ export const USER_PROVIDER_SECRET_KEYS = Object.freeze([
   'FAL_API_KEY',
   'ALIYUN_API_KEY',
   'MUREKA_API_KEY',
-  'RELAY_API_KEY',
   'RUNNINGHUB_API_KEY',
   'RUNNINGHUB_GLOBAL_API_KEY',
   'RUNNINGHUB_IMAGE_ACCESS_PASSWORD',
@@ -44,12 +44,6 @@ export const USER_PROVIDER_SECRET_KEYS = Object.freeze([
   'TOS_SECRET_KEY',
 ]);
 const SECRET_KEYS = new Set(USER_PROVIDER_SECRET_KEYS);
-
-// 「AIFISHER API」的独立配置。与官方各家、RunningHub 三者互不影响，
-// 全 ASCII 键名、按来源前缀命名空间。
-const RELAY_KEYS = [
-  'RELAY_BASE_URL',
-];
 
 const RUNNINGHUB_KEYS = [
   'RUNNINGHUB_BASE_URL',
@@ -104,7 +98,6 @@ const LOCAL_ONLY_DISABLED_KEYS = new Set(['SERVER_IP', 'COLLAB_HOST']);
 const KNOWN_KEYS = new Set([
   ...SECRET_KEYS,
   ...RUNNINGHUB_KEYS,
-  ...RELAY_KEYS,
   'TOS_BUCKET',
   'TOS_REGION',
   'TOS_ENDPOINT',
@@ -136,6 +129,7 @@ function parseUrlSafe(value = '') {
 
 function normalizeNetworkConfigValue(key, value) {
   const trimmed = String(value || '').trim();
+  if (trimmed && (/URL|ENDPOINT|PROXY/.test(key))) assertIndependentUrl(parseUrlSafe(trimmed) || trimmed);
   if (!NETWORK_KEYS.has(key) || !trimmed) return trimmed;
   const fixed = fixProtocolSlashes(trimmed).replace(/\s+/g, '');
   const parsed = parseUrlSafe(fixed);
@@ -303,7 +297,7 @@ export function createConfigRouter({
           secretPatch[key] = value;
           continue;
         }
-        next[key] = NETWORK_KEYS.has(key) ? normalizeNetworkConfigValue(key, value) : value;
+        next[key] = normalizeNetworkConfigValue(key, value);
       }
       if (Object.keys(secretPatch).length > 0) await credentialStore.update(secretPatch);
       const nextContent = serializeEnvironment(next);
@@ -318,7 +312,7 @@ export function createConfigRouter({
       response.json({ success: true });
     } catch (error) {
       logger.error('[Config] Update failed:', error?.name || 'Error');
-      response.status(500).json({ error: 'Failed to update config' });
+      response.status(error?.code === 'REMOVED_SERVICE_URL' ? 400 : 500).json({ error: error?.code === 'REMOVED_SERVICE_URL' ? error.message : 'Failed to update config', ...(error?.code === 'REMOVED_SERVICE_URL' ? { code: error.code } : {}) });
     }
   });
 

@@ -176,12 +176,12 @@ export function CanvasImageAngle({ node, onClose, onApply, editing = false }: Pr
             {error ||
               (editing
                 ? '保存角度设置后，点击生成查看结果。'
-                : 'GPT2.5 低价版 · 自动连接原图，按账户实际用量计费。')}
+                : '自动连接原图创建本地草稿，请在新节点选择模型后生成。')}
           </span>
           <ImageToolGenerateButton
             editing={editing}
             aspectRatio={node.aspectRatio || '16:9'}
-            label={editing ? '应用设置' : '生成新角度'}
+            label={editing ? '应用设置' : '创建角度草稿'}
             onClick={() => {
               try {
                 onApply(node.id, angle);

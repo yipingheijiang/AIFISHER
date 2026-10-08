@@ -471,12 +471,6 @@ function variantRow(
     left.append(badge);
   }
 
-  // 低价渠道便宜得反常（Grok / Nano Banana 1 都是一次 ¥0.07），
-  // RH 自己的说明是「价格远低于官方稳定版，不稳定」。只写价格不写代价，
-  // 等于引导用户去选一个会翻车的渠道。
-  // 只有标准档需要这个牌子：同一个「AIFISHER API」会出现两条、价格差一倍，
-  // 不标一下分不出哪条是贵的。低价档自己的标签里已经写着「低价」并挂着
-  // 「不保证质量」，再加一个只会更吵。
   if (variant.premium && variant.tier !== 'budget') {
     const badge = textElement('span', '可选渠道', '');
     Object.assign(badge.style, {

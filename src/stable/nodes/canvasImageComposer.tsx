@@ -51,15 +51,16 @@ export function CanvasImageComposer(
     [modeOpen, setModeOpen] = React.useState(false),
     [editing, setEditing] = React.useState(false);
   const modeRoot = React.useRef<HTMLDivElement>(null);
-  const model = models.find((candidate) => candidate.name === node.imageModel) ||
-    models[0] || { name: '' };
+  const model = models.find((candidate) => candidate.name === node.imageModel) || { name: '' };
   const hasImageInput = assets.some(
     (asset) => asset.type === 'Image' || asset.type === 'Upload Image',
   );
   const effectiveMode = resolveImageGenerationMode(node.imageMode, hasImageInput);
   const specialModes = (model.imageModes || []).filter((mode) => !isAutomaticImageMode(mode.value));
   const modeSupported = supportsImageGenerationMode(model.imageModes, effectiveMode);
-  const modeWarning = modeSupported
+  const modeWarning = !model.name
+    ? '请选择图像模型；草稿保存在本地，尚未提交生成。'
+    : modeSupported
     ? ''
     : hasImageInput
       ? '当前模型不支持图片输入'

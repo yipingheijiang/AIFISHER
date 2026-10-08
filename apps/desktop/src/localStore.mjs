@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { mkdir, open, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 
-// Temp file in the same directory, flushed, then renamed over the target (MoveFileEx on Windows).
+// Local state is flushed to a temporary file, then renamed atomically on Windows.
 export async function writeFileAtomically(filePath, contents) {
   const directory = path.dirname(filePath);
   await mkdir(directory, { recursive: true });

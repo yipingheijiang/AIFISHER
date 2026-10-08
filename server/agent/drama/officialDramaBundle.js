@@ -28,7 +28,7 @@ export const OFFICIAL_DRAMA_BUNDLE = deepFreeze({
       height: field('61', 'value'),
     },
   },
-  scenes: { provider: 'relay', model: 'Seedream 5.0 Pro · API' },
+  scenes: { provider: null, model: null, unavailable: 'LOCAL_EDITION_SOURCE_REMOVED' },
   drama: {
     provider: 'runninghub-cn',
     webAppId: '2094859983199498241',
@@ -51,7 +51,7 @@ export const OFFICIAL_DRAMA_BUNDLE = deepFreeze({
 export const OFFICIAL_DRAMA_SKILL_METADATA = Object.freeze({
   slug: OFFICIAL_DRAMA_BUNDLE.skillSlug,
   name: '剧本文戏',
-  description: '官方推荐：剧本资产、即梦 5 场景、角色参考与 MiniMax H3 低配文戏。生成需逐阶段确认。',
+  description: '剧本资产、角色参考与 MiniMax H3 文戏。场景图请使用自己配置的模型在画布生成；付费工作流需逐阶段确认。',
   source: 'official',
   readOnly: true,
   version: OFFICIAL_DRAMA_BUNDLE.version,

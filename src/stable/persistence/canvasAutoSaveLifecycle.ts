@@ -24,12 +24,6 @@ interface SaveSession {
   props: CanvasAutoSaveProps;
 }
 
-declare global {
-  interface Window {
-    __FISHERAI_BEFORE_DESKTOP_UPDATE__?: () => Promise<void>;
-  }
-}
-
 function signature(props: CanvasAutoSaveProps): string | undefined {
   try {
     return JSON.stringify([props.nodes, props.groups, props.title]);
@@ -70,17 +64,6 @@ export function useCanvasAutoSave(hooks: ReactHooks, props: CanvasAutoSaveProps)
     };
     sessionRef.current = session;
     const save = () => session.props.onSave();
-    const saveBeforeUpdate = async () => {
-      session.controller.cancelScheduled();
-      const result = await session.controller.attempt('edit', documentState(session), save, true);
-      if (result !== 'saved' && result !== 'clean') {
-        throw new Error(result === 'busy' ? '画布正在保存，请稍后再试。' : '画布尚未保存成功，请先保存后再更新。');
-      }
-      if (session.props.hasActiveOperations) {
-        throw new Error('画布已保存。仍有任务正在处理，请等待任务结束后再更新。');
-      }
-    };
-    window.__FISHERAI_BEFORE_DESKTOP_UPDATE__ = saveBeforeUpdate;
     const attempt = (reason: AutoSaveReason, force = false) => {
       if (session.closed) return;
       void session.controller
@@ -120,9 +103,6 @@ export function useCanvasAutoSave(hooks: ReactHooks, props: CanvasAutoSaveProps)
     document.addEventListener('visibilitychange', hidden);
     const timer = window.setInterval(() => attempt('interval'), props.interval ?? 60_000);
     return () => {
-      if (window.__FISHERAI_BEFORE_DESKTOP_UPDATE__ === saveBeforeUpdate) {
-        delete window.__FISHERAI_BEFORE_DESKTOP_UPDATE__;
-      }
       session.closed = true;
       session.controller.dispose();
       if (sessionRef.current === session) sessionRef.current = null;

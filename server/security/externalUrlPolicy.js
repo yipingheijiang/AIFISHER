@@ -1,3 +1,4 @@
+import { assertIndependentUrl } from './offlinePolicy.js';
 import dns from 'node:dns/promises';
 import net from 'node:net';
 
@@ -59,6 +60,7 @@ export async function validateExternalUrl(value, { resolveHost = defaultResolveH
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
     throw new ExternalUrlPolicyError('外部 URL 只允许无凭据的 HTTP 或 HTTPS');
   }
+  assertIndependentUrl(url);
   const hostname = url.hostname.toLowerCase();
   if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
     throw new ExternalUrlPolicyError('外部 URL 不允许访问本机或内网', 400, 'PRIVATE_NETWORK_URL');

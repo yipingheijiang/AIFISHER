@@ -30,7 +30,6 @@ export async function loadReleaseHelpers(toolsDirectory) {
   ]);
   return {
     providerSecretKeys: runtime.USER_PROVIDER_SECRET_KEYS,
-    loadIdentityConfiguration: runtime.loadPackagedIdentityRuntimeConfiguration,
     loadProductVersion: runtime.loadPackagedProductVersion,
     credentialFileName: credentials.PROVIDER_CREDENTIAL_FILE_NAME,
     createCredentialStore: ({ filePath, helperPath }) =>
@@ -85,13 +84,6 @@ async function writeTextAtomic(file, contents) {
   }
 }
 
-export async function readIdentityIssuer({ installation, helpers }) {
-  const values = await helpers.loadIdentityConfiguration(releasePaths(installation), {
-    required: installation.packaged,
-  });
-  return values.AIFISHER_ACCESS_TOKEN_ISSUER ?? null;
-}
-
 // Mirrors runtimeControl's start environment, plus the pipe and the Identity origin.
 export async function createBackendEnvironment({
   installation,
@@ -114,7 +106,6 @@ export async function createBackendEnvironment({
   const environment = {
     ...baseEnvironment,
     ...parseEnvironment(await readText(installation.envFile)),
-    ...(await helpers.loadIdentityConfiguration(paths, { required: installation.packaged })),
     AIFISHER_PRODUCT_VERSION: await helpers.loadProductVersion(paths),
   };
   for (const key of FOREIGN_VARIABLES) delete environment[key];
@@ -155,8 +146,8 @@ export async function createBackendEnvironment({
     AIFISHER_ACTIVE_USER_ID: userId,
     AIFISHER_BACKEND_PIPE: pipe,
   });
-  if (environment.AIFISHER_ACCESS_TOKEN_ISSUER) {
-    environment.AIFISHER_IDENTITY_ORIGIN = environment.AIFISHER_ACCESS_TOKEN_ISSUER;
+  for (const key of Object.keys(environment)) {
+    if (/^(AIFISHER_(IDENTITY|ACCESS_TOKEN|SESSION_STATUS)|RELAY_)/.test(key)) delete environment[key];
   }
   return environment;
 }

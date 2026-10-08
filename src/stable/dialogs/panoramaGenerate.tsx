@@ -43,10 +43,10 @@ export function PanoramaGenerate({
         </header>
         <footer>
           <span role="status">
-            {error || 'GPT2.5 低价版 · 自动连接原图，生成结果保留为新图片。'}
+            {error || '创建本地草稿，请在新节点选择模型后生成全景图。'}
           </span>
           <ImageToolGenerateButton
-            label="生成全景图"
+            label="创建全景草稿"
             aspectRatio="2:1"
             onClick={() => {
               try {

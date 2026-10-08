@@ -1,4 +1,5 @@
 import { annotateProviderError } from '../telemetry/providerDiagnostics.js';
+import { assertIndependentUrl } from '../security/offlinePolicy.js';
 /**
  * baseProvider.js
  * 供应商处理器的基类/通用工具
@@ -107,6 +108,7 @@ export const BaseProvider = {
         const proxy = (useProxy && rawProxy) ? this.normalizeProxy(rawProxy) : null;
 
         if (proxy && ProxyAgent) {
+            assertIndependentUrl(proxy);
             try {
                 fetchOptions.dispatcher = new ProxyAgent(proxy);
                 return proxy;
@@ -361,7 +363,7 @@ export const BaseProvider = {
         return images.map(img => {
             const value = typeof img === 'string' ? img.trim() : '';
             // Agent 上传的图片历史上会把 data URL 的前缀拆掉，只留下裸 Base64。
-            // 保留为 data URL，RelayTextProvider 才能将本机图片上传为公网参考图。
+            // 保留为 data URL，独立图像模型 才能将本机图片上传为公网参考图。
             if (/^[A-Za-z0-9+/=\r\n]+$/.test(value) && value.length > 128) {
                 return `data:image/png;base64,${value.replace(/\s+/g, '')}`;
             }

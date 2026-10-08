@@ -4,10 +4,6 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { OFFICIAL_DRAMA_BUNDLE, officialProductionBundle } from './officialDramaBundle.js';
 import { productionProfileForBundle } from '../../../src/shared/officialProductionProfiles.js';
-import { loadModelCatalog } from '../../config/modelCatalog.js';
-import { getGenerationProvider } from '../../generation/generationProviderCatalog.js';
-import { executeGenerationTask } from '../../generation/generationExecution.js';
-import { saveMediaBufferToFile } from '../../utils/imageHelpers.js';
 import {
   assertWorkflowStorageIsPrivate,
   resolveWorkflowStorageDirectory,
@@ -62,18 +58,6 @@ function uuidFrom(value) {
   return `${result.slice(0, 8)}-${result.slice(8, 12)}-${result.slice(12, 16)}-${result.slice(16, 20)}-${result.slice(20)}`;
 }
 
-function privateSingleAttemptContext(context) {
-  const descriptors = Object.getOwnPropertyDescriptors(context || {});
-  for (const descriptor of Object.values(descriptors)) {
-    // The shared generation pipeline spreads its context. Keep lazy credential getters
-    // available there without eagerly snapshotting them or changing app.locals itself.
-    descriptor.enumerable = true;
-  }
-  descriptors.LOGS_DIR = { value: undefined, enumerable: true };
-  descriptors.AIFISHER_SINGLE_SUBMIT_ATTEMPT = { value: true, enumerable: true };
-  return Object.create(Object.getPrototypeOf(context || {}), descriptors);
-}
-
 function publicRecord(record) {
   if (!record) return null;
   const fields = [
@@ -123,10 +107,6 @@ export function createDramaExecutionService({
   generationCoordinator,
   compileSegment,
   appContext = {},
-  modelCatalog = loadModelCatalog,
-  providerFor = getGenerationProvider,
-  executeImage = executeGenerationTask,
-  saveMedia = saveMediaBufferToFile,
   now = () => new Date().toISOString(),
 } = {}) {
   if (!planStore || !libraryDirectory || !generationCoordinator || !compileSegment) {
@@ -247,44 +227,11 @@ export function createDramaExecutionService({
     return operation;
   }
 
-  async function runScene(record, context) {
-    const modelName = OFFICIAL_DRAMA_BUNDLE.scenes.model;
-    const model = modelCatalog()[modelName];
-    const endpoint = model?.endpoint?.['text-to-image'];
-    if (!model || model.provider !== 'RelayImageProvider' || model.source !== 'relay' || !endpoint?.url || !endpoint.model) {
-      throw new DramaExecutionError('即梦 5 官方组合线路不可用', 'DRAMA_MODEL_UNAVAILABLE');
-    }
-    const asset = record.snapshot;
-    const divisor = (a, b) => b ? divisor(b, a % b) : a;
-    const common = divisor(asset.width, asset.height);
-    const request = {
-      nodeId: record.taskNodeId, generationAttemptId: record.attemptId, projectId: record.projectId,
-      prompt: asset.prompt, imageModel: endpoint.model, imageMode: 'text-to-image',
-      url: endpoint.url, mappingKey: endpoint.model, timeEstimate: model.timeEstimate, useProxy: model.useProxy,
-      aspectRatio: `${asset.width / common}:${asset.height / common}`, resolution: '2K', generateCount: 1,
-    };
-    await patch(record, { phase: 'submitting' });
-    const result = await executeImage({ kind: 'image', nodeId: record.taskNodeId, modelName,
-      providerName: model.provider, provider: providerFor(model.provider), coordinator: generationCoordinator,
-      executionContext: { modelIdKey: endpoint.model, maxConcurrent: model.maxConcurrent, timeEstimate: model.timeEstimate },
-      request, appContext: privateSingleAttemptContext(context),
-      saveResult(providerResult) {
-        const outputs = (Array.isArray(providerResult) ? providerResult : [providerResult]).slice(0, 20).map((item) => {
-          if (!Buffer.isBuffer(item?.buffer) || !/^(?:png|jpe?g|webp|gif|avif)$/i.test(item.format || '')) {
-            throw new DramaExecutionError('生成结果不是可保存的图像', 'DRAMA_OUTPUT_INVALID');
-          }
-          const saved = saveMedia(item.buffer, record.projectId, 'images', item.format, {
-            prompt: asset.prompt, model: modelName, mode: 'text-to-image', aspectRatio: request.aspectRatio,
-            resolution: '2K', generationAttemptId: record.attemptId,
-          }, record.taskNodeId);
-          return { assetId: saved.id, url: saved.url, mediaKind: 'image' };
-        });
-        return { type: 'image', outputs, resultUrls: outputs.map((output) => output.url) };
-      },
-    });
-    const outputs = checkedOutputs(result.outputs, record.projectId);
-    if (!outputs.length) throw new DramaExecutionError('生成结果缺少当前项目图像', 'DRAMA_OUTPUT_INVALID');
-    await patch(record, { status: 'success', phase: 'completed', outputs, retryable: false });
+  async function runScene() {
+    throw new DramaExecutionError(
+      '本地版已停用依赖原场景线路的自动制作组合。请使用画布中的独立模型和工作流手动制作。',
+      'LOCAL_EDITION_SOURCE_REMOVED',
+    );
   }
 
   async function launch(record, context) {
@@ -310,12 +257,12 @@ export function createDramaExecutionService({
     } catch (error) {
       const code = String(error?.code || 'DRAMA_SUBMISSION_UNCERTAIN');
       // A lost response is not evidence that no remote task was created.
-      const preflight = ['DRAMA_MODEL_UNAVAILABLE', 'DRAMA_WORKFLOW_SCHEMA_CHANGED', 'RUNNINGHUB_CREDENTIAL_MISSING',
+      const preflight = ['LOCAL_EDITION_SOURCE_REMOVED', 'DRAMA_MODEL_UNAVAILABLE', 'DRAMA_WORKFLOW_SCHEMA_CHANGED', 'RUNNINGHUB_CREDENTIAL_MISSING',
         'MODEL_CONCURRENCY_LIMIT', 'NODE_GENERATION_ACTIVE', 'PROMPT_TOO_SHORT'].includes(code);
       await patch(record, {
         status: preflight ? 'failed' : 'unknown', phase: preflight ? 'rejected' : 'submission-unknown',
-        code: preflight ? code : 'DRAMA_SUBMISSION_UNCERTAIN', retryable: preflight, remoteMayContinue: !preflight,
-        error: preflight ? '生成尚未提交，请检查模型配置或工作流字段后手动重试。'
+        code: preflight ? code : 'DRAMA_SUBMISSION_UNCERTAIN', retryable: preflight && code !== 'LOCAL_EDITION_SOURCE_REMOVED', remoteMayContinue: !preflight,
+        error: code === 'LOCAL_EDITION_SOURCE_REMOVED' ? error.message : preflight ? '生成尚未提交，请检查模型配置或工作流字段后手动重试。'
           : '无法确认远端任务结果，系统不会自动重新提交。请先核对原任务。',
       }).catch(() => undefined);
     } finally { inFlight.delete(key); }
@@ -372,6 +319,12 @@ export function createDramaExecutionService({
     id(input.assetId); id(input.attemptId);
     const asset = plan.assets.find((item) => item.id === input.assetId);
     if (!asset || !['character', 'scene'].includes(asset.kind)) throw new DramaExecutionError('计划资产不存在');
+    // Reject before recording an attempt or charging for a partial batch that cannot finish.
+    const history = await read(plan.id, plan.projectId);
+    const pendingScene = plan.assets.some(item => item.kind === 'scene' && !history.attempts.some(
+      attempt => attempt.assetId === item.id && attempt.planRevision === plan.revision && attempt.status === 'success' && attempt.outputs?.length,
+    ));
+    if (asset.kind === 'scene' || pendingScene) await runScene();
     if (!Number.isInteger(asset.width) || !Number.isInteger(asset.height) || asset.width < 64 || asset.height < 64
       || asset.width > 4096 || asset.height > 4096 || typeof asset.prompt !== 'string' || asset.prompt.trim().length < 5) {
       throw new DramaExecutionError('资产提示词或尺寸不完整，请先修改计划', 'DRAMA_ASSET_INVALID', 400);

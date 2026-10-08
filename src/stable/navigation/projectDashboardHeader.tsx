@@ -61,7 +61,7 @@ export function ProjectDashboardHeader(
   const [switching, setSwitching] = React.useState(false);
   const [workspaceError, setWorkspaceError] = React.useState('');
   const switchWorkspace = async () => {
-    if (switching || document.documentElement.dataset.aifisherUpdateApplying === 'true') return;
+    if (switching) return;
     setSwitching(true);
     setWorkspaceError('');
     try { await desktop?.switchWorkspace?.(); }
@@ -129,7 +129,6 @@ export function ProjectDashboardHeader(
         </div>
       </div>
       <div className={'flex items-center gap-4'}>
-        <div data-fisherai-feedback-center-slot="true" />
         <div className={'relative group'}>
           <SearchIcon
             className={

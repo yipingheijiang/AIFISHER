@@ -48,7 +48,7 @@ export function AgentExternalConnection({ controller }: { controller: CanvasExte
       <details className="my-3"><summary className="cursor-pointer">找不到 MCP 或连接失败？</summary>
         <p className="my-2">插件页面顶部要点击“MCP”标签，不是“插件”列表。没有 aifisher：先确认 Codex 已成功执行配置指令，再重新打开设置页面。</p>
         <p className="my-2">启用后当前对话仍提示没有工具：新建一个 Codex 任务，再发送“读取当前 AIFISHER 画布”。开关开启只代表启用，实际读取成功才算接通。</p>
-        <p className="my-2">配对码过期或已使用：重新点击上方按钮并发送新指引。连接最长一小时；授权过期、关闭项目或退出登录后，请在目标画布重新配对。</p>
+        <p className="my-2">配对码过期或已使用：重新点击上方按钮并发送新指引。连接最长一小时；授权过期或关闭项目后，请在目标画布重新配对。</p>
       </details>
       <details className="my-3"><summary className="cursor-pointer">备用：连接 Codex CLI（终端）</summary>
         <p className="my-2">仅在使用终端版 Codex 时选择。桌面与 CLI 指令共用一次性配对码，不能执行两次；切换方式请重新配对。</p>

@@ -1691,7 +1691,6 @@ export function CanvasApplication(React: Runtime, dependencies: Dependencies) {
               setNodes(result.nodes);
               setSelectedNodeIds([result.id]);
             });
-            void handleGenerate(result.id);
           },
           onAngle: (id: string, angle: ImageAngle) => {
             if (!workflowId || view !== 'canvas') throw new Error('请先打开项目。');
@@ -1705,7 +1704,6 @@ export function CanvasApplication(React: Runtime, dependencies: Dependencies) {
               setNodes(result.nodes);
               setSelectedNodeIds([result.id]);
             });
-            void handleGenerate(result.id);
           },
           sources: nodes.filter(
             (node) => ['Image', 'Upload Image'].includes(node.type) && node.resultUrl,

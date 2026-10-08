@@ -13,13 +13,6 @@
 
 import { GENERATION_PROVIDER_CONTRACTS } from './generationProviderCatalog.js';
 import { loadModelCatalog, normalizeModelDuration } from '../config/modelCatalog.js';
-import { relayPromotionFor } from './relayPromotion.js';
-import { relayRetailAdjustment } from './relayRetailAdjustment.js';
-import {
-  RELAY_PRICE_INSUFFICIENT_NOTE,
-  relayPriceFor,
-  relayPriceHasCurrentParameterEvidence,
-} from './relayPricing.js';
 
 const SECRETS_BY_PROVIDER = new Map(
   GENERATION_PROVIDER_CONTRACTS.map((contract) => [contract.name, contract.requiredSecrets]),
@@ -40,9 +33,6 @@ function isProviderConfigured(model, secrets, readSecret, providerConfiguration)
   if (typeof providerConfiguration[model.provider] === 'boolean') {
     return providerConfiguration[model.provider];
   }
-  if (model.source === 'relay' && providerConfiguration.relayAccountManaged === true) {
-    return providerConfiguration.relayAccountBound === true;
-  }
   return isConfigured(secrets, readSecret);
 }
 
@@ -61,7 +51,6 @@ function isProviderConfigured(model, secrets, readSecret, providerConfiguration)
  */
 export const SOURCE_LABELS = Object.freeze({
   official: '官方大语言模型',
-  relay: 'AIFISHER API',
   runninghub_global: 'RH AI站',
   runninghub: 'RH CN站',
   dreamina_cli: '即梦 CLI',
@@ -391,7 +380,7 @@ function rhCanvasPrice(model, resolution, mode, duration, {
 export function sourceLabelFor(source, tier, variantLabel = null) {
   const base = SOURCE_LABELS[source] ?? source;
   const variant = variantLabel
-    ? source === 'relay' && variantLabel === '宽审核'
+    ? variantLabel === '宽审核'
       ? `（${variantLabel}）`
       : ` ${variantLabel}`
     : '';
@@ -518,84 +507,6 @@ function priceFor(model, resolution, mode, {
   };
 }
 
-const RELAY_CANVAS_BASELINE_NOTE = '近似价格，最终以任务账单为准';
-
-/**
- * 中转动态层没有同参数证据时，只读当前目录项自己的画布基准价。
- *
- * 这里刻意跳过 observedTaskCost：它属于历史证据，不是展示基准；同时也绝不从
- * 其它模式的 costByMode 借价。若所选模式尚无细分基准，但目录仍有通用 cost，
- * 该数字可以作为画布基准显示，不过必须标成近似值。
- */
-function relayCanvasBaselineFor(model, resolution, mode, { aspectRatio, duration }) {
-  const modeBaseline = priceFor(model, resolution, mode, {
-    aspectRatio,
-    duration,
-    includeObservedTask: false,
-  });
-  if (modeBaseline.price != null) return modeBaseline;
-
-  const price = costAt(model.cost, resolution);
-  if (price == null) return null;
-  return {
-    price,
-    priceLabel: priceLabelForUnitPrice(price, duration, mode),
-    priceNote: modeBaseline.priceNote ?? null,
-    priceExact: false,
-  };
-}
-
-function relayPriceWithCanvasFallback(model, relayPricing, context) {
-  const promotion = relayPromotionFor(model, relayPricing, context.mode, context.pricingNow);
-  const adjustment = relayRetailAdjustment(model, relayPricing, context.mode);
-  const withPromotion = (priced, baseline = false) => {
-    if (priced.price == null || (!promotion && (!baseline || !adjustment))) return priced;
-    const price = baseline && adjustment ? roundPrice(priced.price * adjustment.factor, 6) : priced.price;
-    return {
-      ...priced,
-      price,
-      ...(baseline ? { priceLabel: priceLabelForUnitPrice(price, context.duration, context.mode) } : {}),
-      priceExact: false,
-      priceNote: [baseline ? '按实时计费倍率换算的参考价' : priced.priceNote, promotion?.note].filter(Boolean).join('；'),
-      ...(promotion ? {
-        discountPercent: Math.round((1 - promotion.factor) * 100),
-        promotionLabel: promotion.label,
-        promotionEndsAt: promotion.endsAt,
-      } : {}),
-    };
-  };
-  const dynamicPrice = relayPriceFor(model, relayPricing, context);
-  const observedPrice = observedTaskPrice(
-    model, context.resolution, context.mode, context.duration, context,
-  );
-  const isVideoContext = mediaKindOf(model) === 'video';
-  const hasCurrentParameterEvidence = !isVideoContext
-    || relayPriceHasCurrentParameterEvidence(model, relayPricing, context);
-  if (dynamicPrice.price != null && hasCurrentParameterEvidence) {
-    return withPromotion(dynamicPrice);
-  }
-  if (observedPrice) return withPromotion(observedPrice, true);
-
-  const baseline = relayCanvasBaselineFor(model, context.resolution, context.mode, context);
-  if (baseline?.price == null) {
-    if (dynamicPrice.price != null && isVideoContext && !hasCurrentParameterEvidence) {
-      return { price: null, priceNote: RELAY_PRICE_INSUFFICIENT_NOTE, priceExact: false };
-    }
-    return withPromotion(dynamicPrice);
-  }
-
-  const dynamicNote = dynamicPrice.price != null && isVideoContext && !hasCurrentParameterEvidence
-    ? RELAY_PRICE_INSUFFICIENT_NOTE
-    : dynamicPrice.priceNote;
-  const notes = [dynamicNote, baseline.priceNote, RELAY_CANVAS_BASELINE_NOTE]
-    .filter((note, index, all) => note && all.indexOf(note) === index);
-  return withPromotion({
-    ...baseline,
-    priceNote: notes.join('；'),
-    priceExact: false,
-  }, true);
-}
-
 /**
  * 推出模型的媒体类型。
  *
@@ -711,14 +622,13 @@ export function capabilitiesOf(model) {
   return labels;
 }
 
-export const SOURCE_ORDER = ['relay', 'runninghub_global', 'runninghub', 'official', 'dreamina_cli', 'libtv_cli'];
+export const SOURCE_ORDER = ['runninghub_global', 'runninghub', 'official', 'dreamina_cli', 'libtv_cli'];
 const MEDIA_ORDER = ['image', 'video', 'text', 'audio'];
 
 /**
  * 设置页用的切法：按站分块 → 块内按媒体类型 → 模型。
  *
- * 网关模式下 AIFISHER API 读取当前账号在 Identity 的绑定状态；
- * 非网关开发模式仍可以回退到本机 RELAY_API_KEY。RunningHub 仍是单密钥站点；
+ * 模型可用性仅由用户自行配置的供应商凭据或本地服务决定。
  * 官方是每家一个密钥，所以它的 requiredSecrets 是各家密钥的并集，
  * 且 configured 只在全部填齐时为真——界面要按家分别显示，不能只给一个总开关。
  */
@@ -730,7 +640,7 @@ export function buildSourceSettings({
   const blocks = new Map();
 
   for (const model of Object.values(catalog)) {
-    if (model.selectable === false) continue;
+    if (model.selectable === false || model.source === 'relay' || model.provider?.startsWith('Relay')) continue;
     // 来源目录也供助手发现模型与准备生成使用；卡片去重由设置页负责。
     const secrets = SECRETS_BY_PROVIDER.get(model.provider) ?? [];
     const block = blocks.get(model.source) ?? {
@@ -749,7 +659,7 @@ export function buildSourceSettings({
       customModelId: model.customModelId || '',
       ...(kind === 'text' ? { vision: model.customModelId ? 'unknown'
         : model.supportedReferenceTypes?.includes('image') ? 'supported'
-          : model.source !== 'relay' && model.supportedReferenceTypes?.includes('text') ? 'unsupported' : 'unknown' } : {}),
+          : model.supportedReferenceTypes?.includes('text') ? 'unsupported' : 'unknown' } : {}),
       modelIds: Object.values(model.endpoint || {}).filter((entry) => entry && typeof entry === 'object').map((entry) => entry.model).filter(Boolean),
       variantLabel: model.variantLabel,
       requiredSecrets: [...secrets],
@@ -764,18 +674,13 @@ export function buildSourceSettings({
     .map((source) => {
       const block = blocks.get(source);
       const secrets = [...block.secrets].sort();
-      const accountManaged = source === 'relay'
-        && providerConfiguration.relayAccountManaged === true;
       return {
         source: block.source,
         label: block.label,
-        ...(accountManaged ? { accountManaged: true } : {}),
         // 该站需要的全部密钥，以及各自填没填——官方那块要逐家显示。
         secrets: secrets.map((key) => ({
           key,
-          configured: accountManaged
-            ? providerConfiguration.relayAccountBound === true
-            : Boolean(String(readSecret(key) ?? '').trim()),
+          configured: Boolean(String(readSecret(key) ?? '').trim()),
         })),
         singleKey: secrets.length === 1,
         media: MEDIA_ORDER
@@ -795,14 +700,12 @@ export function buildModelAvailability({
   speed = null,
   generateAudio = null,
   inputImageCount = null,
-  relayPricing = undefined,
   providerConfiguration = {},
-  pricingNow = Date.now(),
 } = {}) {
   const groups = new Map();
 
   for (const model of Object.values(catalog)) {
-    if (model.selectable === false) continue;
+    if (model.selectable === false || model.source === 'relay' || model.provider?.startsWith('Relay')) continue;
     const secrets = SECRETS_BY_PROVIDER.get(model.provider) ?? [];
     const deferredNote = PRICE_DEFERRED_NOTES[model.source] ?? null;
     const parsedFixedDuration = Number(model.fixedDuration);
@@ -810,33 +713,12 @@ export function buildModelAvailability({
       ? parsedFixedDuration
       : null;
     const effectiveDuration = normalizeModelDuration(model, duration);
-    // AiFisher 中转站是动态路由：同参数估价优先；证据不足或接口离线时，
-    // 保留用户提供的画布基准价并明确标成近似值。动态 null 只表示“没有动态证据”，
-    // 不能抹掉目录里的展示基准。文本模型仍保留 token 计费说明。
-    const useRelayPricing = model.source === 'relay'
-      && relayPricing !== undefined
-      && !model.priceTextByMode;
     const priced = model.customModelId
       ? { price: null, priceNote: `自定义模型 ${model.customModelId}，按服务商实际账单计费`, priceExact: false }
       : !supportsMode(model, mode)
       ? { price: null, priceNote: MODE_UNSUPPORTED_PRICE_NOTE, priceExact: false }
       : deferredNote
       ? { price: null, priceNote: deferredNote, priceExact: true }
-      : useRelayPricing
-      ? relayPriceWithCanvasFallback(
-        model,
-        relayPricing,
-        {
-          resolution,
-          mode,
-          aspectRatio,
-          duration: effectiveDuration,
-          speed,
-          generateAudio,
-          inputImageCount,
-          pricingNow,
-        },
-      )
       : priceFor(model, resolution, mode, {
         aspectRatio,
         duration: effectiveDuration,

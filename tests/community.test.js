@@ -17,11 +17,12 @@ describe('public source boundary', () => {
     }
     await expect(registry.readInstructions('closed-drama')).rejects.toThrow();
   });
-  it('loads the official public issuer and keeps source updates separate from installers', async () => {
+  it('ships a local edition without an account issuer or automatic update entry', async () => {
     const install=resolveInstallation({packaged:false,sourceRoot:process.cwd(),executablePath:'electron.exe',environment:{}});
-    const {loadReleaseHelpers,readIdentityIssuer}=await import('../apps/desktop/src/backendEnvironment.mjs');
+    const {loadReleaseHelpers}=await import('../apps/desktop/src/backendEnvironment.mjs');
     const helpers=await loadReleaseHelpers(install.tools);
-    expect(await readIdentityIssuer({installation:install,helpers})).toBe('https://identity.work-fisher.com');
+    expect(helpers.loadIdentityConfiguration).toBeUndefined();
+    expect(JSON.parse(await readFile('config/identity-runtime.json','utf8'))).toEqual({});
     expect(install.updateBridge).toBeNull();
     const key=await readFile('security/identity-access-token-public.pem','utf8');
     expect(key).toContain('BEGIN PUBLIC KEY');
@@ -38,6 +39,7 @@ describe('public source boundary', () => {
     expect(names.some(name=>name.startsWith('closed-')||name==='shared-assets')).toBe(false);
     for(const name of ['creativeCatalog','mjStyleCatalog'])expect(JSON.parse(await readFile(`src/stable/prompt/${name}.json`,'utf8'))).not.toHaveLength(0);
     const preload=await readFile('apps/desktop/src/preload.cjs','utf8');
-    expect(preload).toContain('account: Object.freeze');
+    expect(preload).not.toContain('account: Object.freeze');
+    expect(preload).not.toContain("invoke('update:");
   });
 });

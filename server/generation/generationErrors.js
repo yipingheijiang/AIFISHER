@@ -34,6 +34,12 @@ export function classifyGenerationError(error) {
   const upstreamCode = String(error?.upstreamCode || error?.response?.data?.error?.code || '');
   const message = String(error?.message || '').toLowerCase();
   const normalizedMessage = message.replace(/[_-]+/g, ' ');
+  if (code === 'REMOVED_SERVICE_URL' || code === 'LOCAL_EDITION_SOURCE_REMOVED') {
+    return {
+      code, status: 400, retryable: false,
+      message: '本地版已移除此服务线路。请选择自己配置的独立供应商或本地模型服务。',
+    };
+  }
   if (/midjourney/iu.test(message) && /提示词过长|prompt.{0,20}too long/iu.test(message)) {
     const limit = message.match(/(?:支持|最多)\s*(\d{1,6})\s*(?:以下)?\s*(?:个)?字符/u)?.[1];
     return {
@@ -65,9 +71,7 @@ export function classifyGenerationError(error) {
       code: 'PROVIDER_CREDENTIAL_MISSING',
       status: 400,
       retryable: false,
-      message: error?.credentialSource === 'aifisher_relay'
-        ? '尚未配置 AIFISHER API Key。请打开画布右上角「余额与活动」，填写自己的密钥并点击「保存 Key」，再手动生成。'
-        : '尚未配置当前模型服务的密钥。请到「设置」中连接对应服务并保存自己的密钥，再手动生成。',
+      message: '尚未配置当前模型服务的密钥。请到「设置 → 模型服务」中连接对应服务并保存自己的密钥，再手动生成。',
     };
   }
   if (
@@ -102,7 +106,7 @@ export function classifyGenerationError(error) {
       code: 'PROVIDER_CONTENT_REJECTED',
       status: 422,
       retryable: false,
-      message: '当前线路内容审核未通过。请调整提示词或参考素材；若使用的是普通 API 线路，也可切换到同模型审核更宽松的“API宽审核”线路后手动重试。',
+      message: '当前线路内容审核未通过。请调整提示词或参考素材后手动重试。',
     };
   }
   const tokenQuotaInsufficient =
@@ -147,7 +151,7 @@ export function classifyGenerationError(error) {
   if (code === 'REFERENCE_UPLOAD_FAILED' && (status === 401 || status === 403)) {
     return {
       code: 'PROVIDER_AUTH_FAILED', status: 502, retryable: false,
-      message: `参考素材上传鉴权失败（HTTP ${status}），尚未提交生成任务。请在设置中检查对应服务商的 API Key 是否有效、是否具有素材上传权限。登录画布账号不能替代服务商 API Key。`,
+      message: `参考素材上传鉴权失败（HTTP ${status}），尚未提交生成任务。请在设置中检查对应服务商的 API Key 是否有效、是否具有素材上传权限。`,
     };
   }
   if (code === 'REFERENCE_READ_FAILED' || code === 'REFERENCE_UPLOAD_FAILED') {
@@ -211,7 +215,7 @@ export function classifyGenerationError(error) {
     code: 'GENERATION_FAILED',
     status: 500,
     retryable: false,
-    message: '生成失败，当前信息不足以确定原因。请在意见反馈中附上报错截图或日志；本地 ComfyUI 请同时上传报错工作流 JSON。',
+    message: '生成失败，当前信息不足以确定原因。请查看本地诊断与日志；ComfyUI 请同时检查对应工作流。',
   };
 }
 

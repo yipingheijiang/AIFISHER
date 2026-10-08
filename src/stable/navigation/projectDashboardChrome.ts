@@ -1,27 +1,7 @@
 const STYLE_ID = 'fisherai-project-dashboard-chrome';
 const DASHBOARD_SELECTOR = '[data-fisherai-project-dashboard="true"]';
-const RESOURCE_LINKS_SELECTOR = '[data-fisherai-resource-links="true"]';
 const SETTINGS_BUTTON_SELECTOR = '[data-fisherai-dashboard-settings="true"]';
 const PROJECT_COVER_IMAGE = /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|tiff?|webp)(?:[?#]|$)/iu;
-
-const resources = [
-  {
-    href: 'https://api.work-fisher.com/',
-    label: 'AIFISHER',
-    description: 'API 与服务',
-    accessibleLabel: '打开 AIFISHER 服务',
-    image: '/aifisher-mark-white.svg',
-    imageClassName: 'fisherai-resource-link__mark',
-  },
-  {
-    href: 'https://space.bilibili.com/17919458?spm_id_from=333.1007.0.0',
-    label: 'Work-Fisher',
-    description: '教程与案例',
-    accessibleLabel: '打开 Work-Fisher 教学主页',
-    image: '/community-placeholder.svg',
-    imageClassName: 'fisherai-resource-link__avatar',
-  },
-] as const;
 
 let stopDashboardObservation: (() => void) | null = null;
 
@@ -90,23 +70,9 @@ function installStyleSheet() {
     ${DASHBOARD_SELECTOR} > div:first-child h1 { font-size: 16px !important; font-weight: 650; }
     ${DASHBOARD_SELECTOR} > div:first-child > div:last-child { gap: 10px !important; }
     ${DASHBOARD_SELECTOR} > div:first-child button, ${DASHBOARD_SELECTOR} > div:first-child input { min-height: 38px; font-size: 13px; }
-    .fisherai-resource-links { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-    .fisherai-resource-link { display: inline-flex; align-items: center; height: 42px; gap: 9px; padding: 4px 10px 4px 5px; color: var(--af-text); background: var(--af-input); border: 1px solid var(--af-border); border-radius: 10px; text-decoration: none; white-space: nowrap; }
-    .fisherai-resource-link:hover { color: var(--af-text); background: var(--af-surface-raised); border-color: var(--af-border-control); }
-    .fisherai-resource-link:focus-visible { outline: 2px solid var(--af-focus); outline-offset: 2px; }
-    .fisherai-resource-link__portrait { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; overflow: hidden; background: var(--af-input); border: 1px solid var(--af-border); border-radius: 999px; }
-    .fisherai-resource-link__mark { width: 18px; height: 22px; object-fit: contain; }
-    .fisherai-resource-link__avatar { width: 100%; height: 100%; object-fit: cover; object-position: 50% 36%; }
-    .fisherai-resource-link__copy { display: flex; flex-direction: column; gap: 3px; line-height: 1; }
-    .fisherai-resource-link__label { font-size: 13px; font-weight: 650; }
-    .fisherai-resource-link__description { color: var(--af-text-secondary); font-size: 12px; }
     .fisherai-dashboard-settings { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px; padding: 8px 12px; border: 1px solid var(--af-border); border-radius: 8px; background: var(--af-surface-raised); color: var(--af-text); font-size: 13px; cursor: pointer; }
     .fisherai-dashboard-settings svg { width: 16px; height: 16px; }
     .fisherai-dashboard-settings:hover { background: var(--af-surface-raised); }
-    @media (min-width: 1051px) and (max-width: 1500px), (max-width: 600px) {
-      .fisherai-resource-link { width: 42px; padding: 4px; justify-content: center; }
-      .fisherai-resource-link__copy { display: none; }
-    }
     @media (max-width: 1050px) {
       ${DASHBOARD_SELECTOR} > div:first-child { flex-wrap: wrap; height: auto !important; min-height: 64px; padding: 14px 20px !important; gap: 12px; }
       ${DASHBOARD_SELECTOR} > div:first-child > div:last-child { width: 100%; flex-wrap: wrap; justify-content: flex-start; }
@@ -114,7 +80,6 @@ function installStyleSheet() {
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .fisherai-resource-link,
       .fisherai-dashboard-settings {
         transition: none;
       }
@@ -150,46 +115,6 @@ function createSettingsButton() {
     window.dispatchEvent(new CustomEvent('fisherai:open-settings'));
   });
   return button;
-}
-
-function createResourceLinks() {
-  const nav = document.createElement('nav');
-  nav.className = 'fisherai-resource-links';
-  nav.dataset.fisheraiResourceLinks = 'true';
-  nav.setAttribute('aria-label', 'AIFISHER 资源入口');
-
-  for (const resource of resources) {
-    const link = document.createElement('a');
-    link.className = 'fisherai-resource-link';
-    link.href = resource.href;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.title = `${resource.label} · ${resource.description}`;
-    link.setAttribute('aria-label', resource.accessibleLabel);
-
-    const portrait = document.createElement('span');
-    portrait.className = 'fisherai-resource-link__portrait';
-    portrait.setAttribute('aria-hidden', 'true');
-    const image = document.createElement('img');
-    image.className = resource.imageClassName;
-    image.src = resource.image;
-    image.alt = '';
-    portrait.append(image);
-
-    const copy = document.createElement('span');
-    copy.className = 'fisherai-resource-link__copy';
-    const label = document.createElement('span');
-    label.className = 'fisherai-resource-link__label';
-    label.textContent = resource.label;
-    const description = document.createElement('span');
-    description.className = 'fisherai-resource-link__description';
-    description.textContent = resource.description;
-    copy.append(label, description);
-    link.append(portrait, copy);
-    nav.append(link);
-  }
-
-  return nav;
 }
 
 export function projectCoverPreviewUrl(source: string): string | null {
@@ -264,9 +189,6 @@ function reconcileProjectDashboard() {
 
   const toolbar = header.lastElementChild;
   if (!(toolbar instanceof HTMLElement)) return;
-  if (!header.querySelector(RESOURCE_LINKS_SELECTOR)) {
-    header.insertBefore(createResourceLinks(), toolbar);
-  }
   if (!toolbar.querySelector(SETTINGS_BUTTON_SELECTOR)) {
     const newProject = Array.from(toolbar.querySelectorAll<HTMLButtonElement>('button')).find(
       (button) => button.textContent?.trim() === '新建项目',
@@ -286,7 +208,6 @@ export function uninstallProjectDashboardChromeForTests() {
   stopDashboardObservation?.();
   stopDashboardObservation = null;
   document.getElementById(STYLE_ID)?.remove();
-  document.querySelectorAll(RESOURCE_LINKS_SELECTOR).forEach((element) => element.remove());
   document.querySelectorAll(SETTINGS_BUTTON_SELECTOR).forEach((element) => element.remove());
   document.querySelectorAll(DASHBOARD_SELECTOR).forEach((element) => {
     delete (element as HTMLElement).dataset.fisheraiProjectDashboard;
