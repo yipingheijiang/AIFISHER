@@ -99,7 +99,7 @@ export function createGenerationRecoveryRouter({ coordinator, getUrlPrefix, reco
     }
     return res.json({
       success: true,
-      status: 'cancelled',
+      status: result.task.status,
       code: result.task.code,
       retryable: result.task.retryable,
       remoteMayContinue: result.task.remoteMayContinue !== false,

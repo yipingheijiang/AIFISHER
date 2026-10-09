@@ -95,9 +95,9 @@ export async function executeGenerationTask({
   if (!lease.ok) {
     throw new GenerationTaskError({
       ...lease,
-      status: 429,
-      retryable: true,
-      message: '模型当前并发已满，请稍后重试。',
+      status: lease.status || 429,
+      retryable: lease.retryable ?? true,
+      message: lease.message || '模型当前并发已满，请稍后重试。',
     });
   }
 
@@ -122,11 +122,16 @@ export async function executeGenerationTask({
         // Inherit them instead of spreading away those properties or copying secrets into records.
         Object.assign(Object.create(appContext || null), {
           signal: lease.signal, generationSignal: lease.signal,
-          generationTaskSubmitting(slot = 0) {
+          generationTaskSubmitting(slot = 0, preparedReference) {
             if (!isRecoverableProvider(kind, providerName)) return;
             if (!Number.isInteger(slot) || slot < 0 || slot >= (kind === 'image' ? 10 : 1)) throw createCancelledError();
+            // Native Codex creates its thread before submitting a turn. Persist the
+            // receipt and submission flag together so a crash cannot lose the thread.
+            const nativeReference = providerName === 'CodexImageProvider' ? sanitizeRemoteTaskReference(preparedReference) : null;
+            if (providerName === 'CodexImageProvider' && nativeReference?.providerName !== providerName) throw createCancelledError();
             if (!coordinator.update(lease.nodeId, {
               remoteSubmissionStarted: true, remoteSubmissionCount: slot + 1,
+              ...(nativeReference ? { remoteTasks: [nativeReference] } : {}),
             }, lease.attemptId)) throw createCancelledError();
           },
           generationTaskSubmitted(reference, slot = 0) {

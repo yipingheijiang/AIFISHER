@@ -500,6 +500,23 @@ export const TEXT_MODELS = [
  * cost: 生成开销
  */
 export const IMAGE_MODELS = [
+    {
+        name: 'Codex 内置生图', canonicalModel: 'Codex 内置生图', brand: 'Codex', source: 'codex',
+        description: '通过本机 Codex 的 ChatGPT 登录生图，使用 Codex 账户额度；每次一张，实际模型和尺寸由 Codex 提供。',
+        timeEstimate: '15min', provider: 'CodexImageProvider', maxConcurrent: 1, useProxy: false,
+        maxInputs: 5, supportedReferenceTypes: ['text', 'image'],
+        supportedImageFormats: ['jpeg', 'png', 'webp'], maxImageSizeMb: 10,
+        resolutions: ['1K', '2K'], aspectRatios: ['1:1', '2:3', '3:2', '9:16', '16:9'],
+        imageModes: [
+            { label: '文生图', value: 'text-to-image', allowedInputs: { text: 10 } },
+            { label: '图生图', value: 'image-to-image', allowedInputs: { text: 10, image: 5 } }
+        ],
+        endpoint: {
+            'text-to-image': { url: 'codex://image-generation', model: 'codex-native-image' },
+            'image-to-image': { url: 'codex://image-generation', model: 'codex-native-image' }
+        },
+        advancedParams: [{ key: 'generateCount', label: '生成数量', type: 'select', default: 1, options: [{ label: '1 张（Codex 额度）', value: 1 }] }]
+    },
 
     {
         name: 'Lib Image 2.5 Fast · LibTV CLI', brand: 'Lib Image',

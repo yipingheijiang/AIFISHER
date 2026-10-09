@@ -5,6 +5,7 @@ const fingerprint = (value) => crypto.createHash('sha256').update(String(value))
 const SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/u;
 const HASH = /^[a-f0-9]{64}$/u;
 const RECOVERABLE_PROVIDERS = {
+  CodexImageProvider: 'image',
   LibTvCliImageProvider: 'image',
   LibTvCliVideoProvider: 'video',
   SeedVr2ImageProvider: 'image',
@@ -31,6 +32,9 @@ export function remoteTaskReference({ taskId, providerName, modelId, submitUrl, 
 }
 
 export function sanitizeRemoteTaskReference(reference) {
+  if (reference?.version === 2 && reference.providerName === 'CodexImageProvider'
+    && SAFE_ID.test(reference.taskId || '') && HASH.test(reference.accountFingerprint || ''))
+    return { version: 2, taskId: reference.taskId, providerName: reference.providerName, accountFingerprint: reference.accountFingerprint };
   if (reference?.version !== 1 || !SAFE_ID.test(reference.taskId || '')
     || !Object.hasOwn(RECOVERABLE_PROVIDERS, reference.providerName)
     || (reference.queryEndpointFingerprint !== undefined

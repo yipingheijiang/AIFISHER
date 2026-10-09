@@ -76,7 +76,7 @@ export function classifyGenerationError(error) {
   }
   if (
     error?.expose === true
-    && (code.startsWith('DREAMINA_') || code.startsWith('LIBTV_'))
+    && (code.startsWith('DREAMINA_') || code.startsWith('LIBTV_') || code.startsWith('CODEX_'))
     && status >= 400
     && status <= 599
     && error?.message
@@ -223,6 +223,7 @@ export function classifyGenerationError(error) {
 // upstream errors (which may contain credentials or signed resource URLs).
 export function confirmedGenerationFailure(error) {
   const classified = classifyGenerationError(error);
+  if (classified.code.startsWith('CODEX_')) return { ...classified, retryable: false };
   const temporary = /temporary problem completing your request/iu.test(String(error?.message || ''));
   return {
     code: 'PROVIDER_TASK_FAILED', status: 502, retryable: false,

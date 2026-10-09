@@ -10,6 +10,7 @@ import type { ModelGroup } from './sourceSettingsClient';
  */
 export const COMMON_CANVAS_MODEL_NAMES = [
   // 图片：同一模型的不同中转来源归为一个模型组。
+  'Codex 内置生图',
   'GPT Image 2',
   'GPT Image 2.5',
   'Grok 2',

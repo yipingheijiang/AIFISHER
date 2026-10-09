@@ -129,6 +129,15 @@ function parseUrlSafe(value = '') {
 
 function normalizeNetworkConfigValue(key, value) {
   const trimmed = String(value || '').trim();
+  if (key.startsWith('MODEL_URL_') && trimmed) {
+    let parsed;
+    try { parsed = new URL(trimmed); } catch { /* Reject below. */ }
+    if (!parsed || !['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+      const error = new Error('请填写完整的 HTTP/HTTPS API 请求地址，密钥应单独保存。');
+      error.code = 'INVALID_MODEL_URL';
+      throw error;
+    }
+  }
   if (trimmed && (/URL|ENDPOINT|PROXY/.test(key))) assertIndependentUrl(parseUrlSafe(trimmed) || trimmed);
   if (!NETWORK_KEYS.has(key) || !trimmed) return trimmed;
   const fixed = fixProtocolSlashes(trimmed).replace(/\s+/g, '');
@@ -312,7 +321,8 @@ export function createConfigRouter({
       response.json({ success: true });
     } catch (error) {
       logger.error('[Config] Update failed:', error?.name || 'Error');
-      response.status(error?.code === 'REMOVED_SERVICE_URL' ? 400 : 500).json({ error: error?.code === 'REMOVED_SERVICE_URL' ? error.message : 'Failed to update config', ...(error?.code === 'REMOVED_SERVICE_URL' ? { code: error.code } : {}) });
+      const configurationError = ['REMOVED_SERVICE_URL', 'INVALID_MODEL_URL'].includes(error?.code);
+      response.status(configurationError ? 400 : 500).json({ error: configurationError ? error.message : 'Failed to update config', ...(configurationError ? { code: error.code } : {}) });
     }
   });
 

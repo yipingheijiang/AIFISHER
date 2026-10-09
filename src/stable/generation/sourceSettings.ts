@@ -13,7 +13,7 @@
  * 来源读取失败保留草稿并提供重试；旧版工作流字段使用同一个配置接口独立保存。
  */
 
-import { isLikelyProviderApiKey, modelOverrideKey } from '../../shared/modelOverrideKey.js';
+import { isLikelyProviderApiKey, modelOverrideKey, modelUrlOverrideKey } from '../../shared/modelOverrideKey.js';
 import type {
   MediaKind,
   SourceBlock,
@@ -27,6 +27,7 @@ import { scopeSourceSettingsClient } from './sourceSettingsClient';
 import { createSettingsScope, type SettingsScope } from './sourceSettingsScope';
 import { createLegacyRunningHubSettings } from './legacyRunningHubSettings';
 import { libTvCliVendor } from './libTvCliSettings';
+import { codexImageSettings } from './codexImageSettings';
 
 const PANEL_ATTRIBUTE = 'data-fisherai-source-settings';
 const MEDIA_LABELS: Record<MediaKind, string> = {
@@ -43,7 +44,7 @@ const BLOCK_NOTES: Record<string, string> = {
     '与 RH CN 站账号不互通，需要在 RH AI 站单独注册充值，并保存本站的 API Key。',
   runninghub:
     '与 RH AI 站账号不互通，需要在 RH CN 站单独注册并创建 API Key。两站余额不互通；「全能图片」系列已迁到 RH AI 站。',
-  official: '每家厂商各自独立的密钥，填哪家亮哪家。价格以各厂商账单为准。',
+  official: '每家服务商各自独立的密钥，填哪家亮哪家。OpenAI 图像与文本支持兼容接口地址，价格以服务商账单为准。',
 };
 
 function blockNote(block: SourceBlock) {
@@ -141,7 +142,7 @@ const SECRET_META: Record<string, { vendor: string; label: string; link?: string
   },
   OPENAI_API_KEY: {
     vendor: 'OpenAI',
-    label: 'OpenAI API Key',
+    label: 'OpenAI / 兼容服务 API Key',
     link: 'https://platform.openai.com/api-keys',
   },
   DEEPSEEK_API_KEY: {
@@ -705,7 +706,7 @@ function directVendorDisclosure(
 
   const title = document.createElement('span');
   title.className = 'flex min-w-0 items-center gap-3 text-left';
-  title.append(textElement('span', group.vendor, 'text-lg font-bold text-[var(--af-text)]'));
+  title.append(textElement('span', group.vendor === 'OpenAI' ? 'OpenAI / 第三方兼容 API' : group.vendor, 'text-lg font-bold text-[var(--af-text)]'));
   const configurationBadge =
     configuredCount === group.secrets.length
       ? badge('已配置', 'on')
@@ -789,6 +790,19 @@ function adaptedModelSelector(availableModels: readonly SourceModel[], saveConfi
   const capabilityNote = textElement('p', '', 'text-xs leading-relaxed text-neutral-400');
   capabilityNote.setAttribute('data-fisherai-model-capability', 'true');
   wrapper.append(capabilityNote);
+  const endpoints = document.createElement('div');
+  endpoints.className = 'grid gap-3';
+  endpoints.setAttribute('data-fisherai-model-endpoints', 'true');
+  let endpointInputs: { mode: string; input: HTMLInputElement }[] = [];
+  const endpointLabels: Record<string, string> = {
+    'text-to-image': '文生图',
+    'image-to-image': '图生图',
+    'image-inpainting': '遮罩修图',
+    'text-to-text': '文本生成',
+    'chat': '文本生成',
+    'multimodal-chat': '多模态对话',
+  };
+  wrapper.append(endpoints);
   const editor = document.createElement('div');
   editor.className = 'flex flex-wrap items-center gap-2';
   const input = document.createElement('input');
@@ -799,7 +813,7 @@ function adaptedModelSelector(availableModels: readonly SourceModel[], saveConfi
     'min-w-0 flex-1 rounded-lg border border-[var(--af-border)] bg-[var(--af-input)] px-3 py-2 text-sm text-[var(--af-text)]';
   const save = document.createElement('button');
   save.type = 'button';
-  save.textContent = '保存密钥和模型';
+  save.textContent = '保存连接配置';
   save.className = 'fisherai-button is-primary';
   const reset = document.createElement('button');
   reset.type = 'button';
@@ -818,9 +832,34 @@ function adaptedModelSelector(availableModels: readonly SourceModel[], saveConfi
       ? `默认：${[...new Set(model.modelIds)].join(' / ')}`
       : '填写服务商提供的模型 ID';
     status.textContent = '留空使用默认。自定义模型沿用所选接口格式与能力，费用以服务商账单为准。';
+    endpoints.replaceChildren();
+    endpointInputs = [];
+    endpoints.hidden = !model?.endpoints?.length;
+    if (model?.endpoints?.length) {
+      endpoints.append(textElement('p',
+        '第三方兼容 API：在上方填写该服务商的 API Key，下方填写完整请求地址和模型 ID。图像接口须兼容 OpenAI Images，文本接口须兼容 Chat Completions；只填 /v1 不会自动补路径。留空使用默认地址。',
+        'text-xs leading-relaxed text-[var(--af-text-secondary)]'));
+      for (const endpoint of model.endpoints) {
+        const row = document.createElement('label');
+        row.className = 'grid gap-1';
+        const label = `${endpointLabels[endpoint.mode] || endpoint.mode} API 地址`;
+        const urlInput = document.createElement('input');
+        urlInput.type = 'url';
+        urlInput.maxLength = 2048;
+        urlInput.value = endpoint.customUrl;
+        urlInput.placeholder = `默认：${endpoint.defaultUrl}`;
+        urlInput.setAttribute('aria-label', label);
+        urlInput.autocomplete = 'off';
+        urlInput.spellcheck = false;
+        urlInput.className = input.className;
+        row.append(textElement('span', label, 'text-xs text-[var(--af-text-secondary)]'), urlInput);
+        endpoints.append(row);
+        endpointInputs.push({ mode: endpoint.mode, input: urlInput });
+      }
+    }
   };
   select.addEventListener('change', refreshModel);
-  const persist = async (value: string) => {
+  const persist = async (value: string, restoreDefaults = false) => {
     if (value && !/^[a-zA-Z0-9][a-zA-Z0-9_./:@+-]{0,199}$/.test(value)) {
       status.textContent = '请输入有效模型 ID，不能包含空格或换行。';
       return;
@@ -829,24 +868,48 @@ function adaptedModelSelector(availableModels: readonly SourceModel[], saveConfi
       status.textContent = '这里填写模型 ID，不是 API Key；请在上方密钥输入框填写 API Key。';
       return;
     }
+    const endpointValues: Record<string, string> = {};
+    for (const field of endpointInputs) {
+      const url = restoreDefaults ? '' : field.input.value.trim();
+      if (url) {
+        try {
+          const parsed = new URL(url);
+          if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password)
+            throw new Error('Invalid URL');
+        } catch {
+          status.textContent = '请填写完整的 HTTP/HTTPS API 请求地址；密钥填写在上方 API Key 输入框。';
+          return;
+        }
+      }
+      endpointValues[modelUrlOverrideKey(select.value, field.mode)] = url;
+    }
+    // Copy an old common URL into each mode's input when reading, then clear
+    // the common fallback on save so clearing a mode truly restores its default.
+    if (endpointInputs.length) endpointValues[modelUrlOverrideKey(select.value)] = '';
     save.disabled = reset.disabled = select.disabled = input.disabled = true;
+    for (const field of endpointInputs) field.input.disabled = true;
     const model = models.find((item) => item.name === select.value);
     try {
-      await saveConfiguration({ [modelOverrideKey(select.value)]: value });
+      await saveConfiguration({ [modelOverrideKey(select.value)]: value, ...endpointValues });
       if (model) model.customModelId = value;
+      for (const endpoint of model?.endpoints || [])
+        endpoint.customUrl = endpointValues[modelUrlOverrideKey(select.value, endpoint.mode)] || '';
+      for (const field of endpointInputs)
+        field.input.value = endpointValues[modelUrlOverrideKey(select.value, field.mode)] || '';
       input.value = value;
-      status.textContent = '密钥和模型已保存，可以回到画布或 Agent 选择。';
+      status.textContent = '连接配置已保存，可以回到画布或 Agent 选择模型。';
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : '保存失败，请重试。';
     } finally {
       save.disabled = reset.disabled = select.disabled = input.disabled = false;
+      for (const field of endpointInputs) field.input.disabled = false;
     }
   };
   save.addEventListener('click', () => {
     void persist(input.value.trim());
   });
   reset.addEventListener('click', () => {
-    void persist('');
+    void persist('', true);
   });
   refreshModel();
   if (!models.length) save.disabled = reset.disabled = input.disabled = true;
@@ -1074,6 +1137,7 @@ export function mountSourceSettings(host: HTMLElement, client: SourceSettingsCli
   panel.append(notice, retry, cards);
   host.prepend(panel);
   const scope = createSettingsScope(panel);
+  cards.append(codexImageSettings(scope));
   let read: AbortController | undefined,
     epoch = 0;
   scope.onDispose(() => read?.abort());

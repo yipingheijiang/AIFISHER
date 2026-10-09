@@ -144,6 +144,11 @@ export function createGenerationCoordinator({
   }) {
     const taskId = String(nodeId || `generation-${now()}-${leaseSeed + 1}`);
     const concurrency = getConcurrency(modelIdKey, maxConcurrent);
+    const previous = getTask(taskId);
+    if (previous?.providerName === 'CodexImageProvider' && previous.status === 'unknown') {
+      return { ok: false, code: 'NODE_GENERATION_UNCONFIRMED', status: 409, retryable: false,
+        message: '原 Codex 生图结果尚未确认，请先核对原任务，避免重复生成。' };
+    }
     if (tasks.get(taskId)?.status === 'loading') {
       return {
         ok: false,
@@ -439,6 +444,13 @@ export function createGenerationCoordinator({
     const task = tasks.get(nodeId);
     if (!task || TERMINAL_STATUSES.has(task.status)) {
       return { ok: false, code: 'GENERATION_NOT_ACTIVE', task: cloneTask(task) };
+    }
+    if (task.providerName === 'CodexImageProvider' && (task.remoteSubmissionStarted || task.remoteTasks?.length)) {
+      const controller = controllers.get(nodeId);
+      const uncertain = finalizeUnknown(nodeId, { code: 'GENERATION_OBSERVATION_INTERRUPTED',
+        error: '已请求停止 Codex；原生图仍可能完成，正在核对结果，请勿重复生成。', remoteMayContinue: true }, task.attemptId);
+      controller?.abort();
+      return { ok: true, task: uncertain };
     }
     controllers.get(nodeId)?.abort();
     const cancelled = transition(nodeId, 'cancelled', {

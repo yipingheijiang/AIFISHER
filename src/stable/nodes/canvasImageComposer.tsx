@@ -72,7 +72,7 @@ export function CanvasImageComposer(
     effectiveMode,
   );
   const pricing = useComposerPricing(React),
-    deferredPrice = ['dreamina_cli', 'libtv_cli'].includes(model.source || ''),
+    deferredPrice = ['dreamina_cli', 'libtv_cli', 'codex'].includes(model.source || ''),
     creditProvider = model.source === 'libtv_cli' ? 'LibTV' : '即梦';
   const resolution = node.resolution || '1K';
   const unitPrice = deferredPrice
@@ -88,7 +88,7 @@ export function CanvasImageComposer(
   const count = node.generateCount || 1,
     billingCount = model.name === 'Midjourney Imagine · API' ? 1 : count;
   const priceLabel = deferredPrice
-    ? `${creditProvider}积分`
+    ? model.source === 'codex' ? 'Codex 额度' : `${creditProvider}积分`
     : unitPrice === null ? '暂无可靠报价' : (unitPrice * billingCount).toFixed(2);
   const hasInput =
     !!node.imageAngle ||
@@ -378,7 +378,7 @@ export function CanvasImageComposer(
             <Tooltip
               text={
                 deferredPrice
-                  ? `按${creditProvider}积分账单结算`
+                  ? model.source === 'codex' ? '使用 Codex 账户额度，每次一张；图片尺寸以原生工具实际输出为准' : `按${creditProvider}积分账单结算`
                   : unitPrice === null
                     ? '当前参数暂无可靠报价，以服务商账单为准'
                     : node.generationDurationMs
@@ -395,7 +395,7 @@ export function CanvasImageComposer(
                   data-fisherai-price-stack={'true'}
                   data-fisherai-price-unit={
                     deferredPrice
-                      ? model.source === 'libtv_cli'
+                      ? model.source === 'codex' ? 'codex-usage' : model.source === 'libtv_cli'
                         ? 'libtv-credit'
                         : 'dreamina-credit'
                       : 'cny'
@@ -435,7 +435,7 @@ export function CanvasImageComposer(
                       textAlign: 'right',
                     }}
                   >
-                    {deferredPrice ? `（以${creditProvider}账单为准）` : unitPrice === null ? '（以服务商账单为准）' : '（最低，以实际消耗为主）'}
+                    {model.source === 'codex' ? '（使用账户额度）' : deferredPrice ? `（以${creditProvider}账单为准）` : unitPrice === null ? '（以服务商账单为准）' : '（最低，以实际消耗为主）'}
                   </span>
                 </span>
               </div>

@@ -13,6 +13,7 @@
 
 import { GENERATION_PROVIDER_CONTRACTS } from './generationProviderCatalog.js';
 import { loadModelCatalog, normalizeModelDuration } from '../config/modelCatalog.js';
+import { modelUrlOverrideKey } from '../../src/shared/modelOverrideKey.js';
 
 const SECRETS_BY_PROVIDER = new Map(
   GENERATION_PROVIDER_CONTRACTS.map((contract) => [contract.name, contract.requiredSecrets]),
@@ -27,6 +28,7 @@ function isConfigured(secrets, readSecret) {
 }
 
 function isProviderConfigured(model, secrets, readSecret, providerConfiguration) {
+  if (model.provider === 'CodexImageProvider') return providerConfiguration.CodexImageProvider === true;
   if (['dreamina_cli', 'libtv_cli'].includes(model.source)) {
     return providerConfiguration[model.provider] === true;
   }
@@ -50,7 +52,8 @@ function isProviderConfigured(model, secrets, readSecret, providerConfiguration)
  * 会让用户以为充了 CN 站的钱就能用 AI 站的模型。
  */
 export const SOURCE_LABELS = Object.freeze({
-  official: '官方大语言模型',
+  codex: 'Codex 内置生图',
+  official: '厂商直连与兼容 API',
   runninghub_global: 'RH AI站',
   runninghub: 'RH CN站',
   dreamina_cli: '即梦 CLI',
@@ -69,8 +72,9 @@ const TIER_SUFFIX = Object.freeze({ standard: '', budget: ' 低价' });
  *
  * 注意：节点自己的生成前预估仍然照常读 cost，那是既有行为，与本处比价无关。
  */
-export const DEFERRED_PRICE_NOTE = '以官方价为准';
+export const DEFERRED_PRICE_NOTE = '以服务商账单为准';
 const PRICE_DEFERRED_NOTES = Object.freeze({
+  codex: '使用 Codex 账户额度',
   official: DEFERRED_PRICE_NOTE,
   dreamina_cli: '以即梦积分账单为准',
   libtv_cli: '以 LibTV 积分账单为准',
@@ -622,7 +626,7 @@ export function capabilitiesOf(model) {
   return labels;
 }
 
-export const SOURCE_ORDER = ['runninghub_global', 'runninghub', 'official', 'dreamina_cli', 'libtv_cli'];
+export const SOURCE_ORDER = ['codex', 'runninghub_global', 'runninghub', 'official', 'dreamina_cli', 'libtv_cli'];
 const MEDIA_ORDER = ['image', 'video', 'text', 'audio'];
 
 /**
@@ -661,6 +665,17 @@ export function buildSourceSettings({
         : model.supportedReferenceTypes?.includes('image') ? 'supported'
           : model.supportedReferenceTypes?.includes('text') ? 'unsupported' : 'unknown' } : {}),
       modelIds: Object.values(model.endpoint || {}).filter((entry) => entry && typeof entry === 'object').map((entry) => entry.model).filter(Boolean),
+      // These immediate providers consume the full request URL. Other providers
+      // may have signed requests or separate polling/upload hosts and need their
+      // own connection settings rather than a misleading generic URL field.
+      ...(['GptImageProvider', 'GptTextProvider'].includes(model.provider) ? {
+        endpoints: Object.entries(model.endpoint || {}).map(([mode, entry]) => ({
+          mode,
+          defaultUrl: typeof entry === 'string' ? entry : entry.url,
+          customUrl: String(readSecret(modelUrlOverrideKey(model.name, mode))
+            || readSecret(modelUrlOverrideKey(model.name)) || '').trim(),
+        })),
+      } : {}),
       variantLabel: model.variantLabel,
       requiredSecrets: [...secrets],
       configured: isProviderConfigured(model, secrets, readSecret, providerConfiguration),

@@ -12,6 +12,7 @@ import {
   DoubaoVideoProvider,
 } from '../providers/doubaoProvider.js';
 import { GptImageProvider, GptTextProvider } from '../providers/gptProvider.js';
+import { CodexImageProvider } from '../providers/codexImageProvider.js';
 import { GrokVideoProvider } from '../providers/grokProvider.js';
 import { JimengImageProvider } from '../providers/jimengProvider.js';
 import { KlingVideoProvider } from '../providers/klingProvider.js';
@@ -36,6 +37,7 @@ function contract(name, handler, kinds, execution, requiredSecrets) {
 }
 
 export const GENERATION_PROVIDER_CONTRACTS = Object.freeze([
+  contract('CodexImageProvider', CodexImageProvider, ['image'], 'polling', []),
   contract('SeedVr2ImageProvider', SeedVr2ImageProvider, ['image'], 'polling', ['RUNNINGHUB_API_KEY']),
   contract('DoubaoTextProvider', DoubaoTextProvider, ['text'], 'immediate', ['ARK_API_KEY']),
   contract('GptTextProvider', GptTextProvider, ['text'], 'immediate', ['OPENAI_API_KEY']),

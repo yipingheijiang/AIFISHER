@@ -1003,6 +1003,80 @@
       }
     }
   },
+  "Codex 内置生图": {
+    "name": "Codex 内置生图",
+    "timeEstimate": "15min",
+    "provider": "CodexImageProvider",
+    "useProxy": false,
+    "maxConcurrent": 1,
+    "source": "codex",
+    "canonicalModel": "Codex 内置生图",
+    "tier": "standard",
+    "variantLabel": null,
+    "brand": "Codex",
+    "premium": false,
+    "cost": null,
+    "costByMode": null,
+    "rhPriceRules": null,
+    "estimatedCostByMode": null,
+    "priceNoteByMode": null,
+    "priceTextByMode": null,
+    "priceFormula": null,
+    "tokenPricePerMillion": null,
+    "tokenVideoPricePerMillion": null,
+    "resolutionSurcharge": null,
+    "imageModes": [
+      {
+        "label": "文生图",
+        "value": "text-to-image",
+        "allowedInputs": {
+          "text": 10
+        }
+      },
+      {
+        "label": "图生图",
+        "value": "image-to-image",
+        "allowedInputs": {
+          "text": 10,
+          "image": 5
+        }
+      }
+    ],
+    "supportedReferenceTypes": [
+      "text",
+      "image"
+    ],
+    "supportedImageFormats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "maxImageSizeMb": 10,
+    "advancedParams": [
+      {
+        "key": "generateCount",
+        "label": "生成数量",
+        "type": "select",
+        "default": 1,
+        "options": [
+          {
+            "label": "1 张（Codex 额度）",
+            "value": 1
+          }
+        ]
+      }
+    ],
+    "endpoint": {
+      "text-to-image": {
+        "url": "codex://image-generation",
+        "model": "codex-native-image"
+      },
+      "image-to-image": {
+        "url": "codex://image-generation",
+        "model": "codex-native-image"
+      }
+    }
+  },
   "Lib Image 2.5 Fast · LibTV CLI": {
     "name": "Lib Image 2.5 Fast · LibTV CLI",
     "timeEstimate": "30min",

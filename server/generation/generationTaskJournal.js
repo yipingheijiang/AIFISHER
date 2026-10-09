@@ -131,6 +131,16 @@ export class GenerationTaskJournal {
     const currentTime = this.now();
     const timestamp = new Date(currentTime).toISOString();
     for (const task of this.tasks.values()) {
+      if (task.providerName === 'CodexImageProvider' && ['loading', 'queued', 'unknown'].includes(task.status)
+        && task.remoteSubmissionStarted !== true && !task.remoteTasks?.length && !task.remoteTask) {
+        Object.assign(task, {
+          status: 'failed', code: 'CODEX_IMAGE_NOT_SUBMITTED', diagnosticCode: 'CODEX_IMAGE_NOT_SUBMITTED',
+          error: 'Codex 任务在提交前停止，没有发起生图，可以重新生成。', retryable: false,
+          remoteMayContinue: false, updatedAt: timestamp, finishedAt: timestamp,
+        });
+        changed = true;
+        continue;
+      }
       if (!ACTIVE_STATUSES.has(task.status)) continue;
       if (task.phase === 'observation-paused') continue;
       if (task.kind === 'workflow-test') {

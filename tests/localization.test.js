@@ -132,7 +132,8 @@ describe('independent network boundary', () => {
 });
 describe('removed account and relay lifecycle', () => {
   it('loads model menus with zero outbound fetches and retains independent sources', async () => {
-    const catalog=loadModelCatalog();expect(Object.keys(catalog)).toHaveLength(71);
+    const catalog=loadModelCatalog();expect(Object.values(catalog).filter(model=>model.provider!=='CodexImageProvider')).toHaveLength(71);
+    expect(catalog['Codex 内置生图']?.provider).toBe('CodexImageProvider');
     expect(Object.values(catalog).some(m=>m.source==='relay'||m.provider.startsWith('Relay'))).toBe(false);
     expect(GENERATION_PROVIDER_CONTRACTS.some(c=>c.name.startsWith('Relay'))).toBe(false);
     const app=express();app.use(createModelSourceRouter({catalog,readSecret:()=>''}));

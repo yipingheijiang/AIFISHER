@@ -3,6 +3,13 @@ export function modelOverrideKey(name) {
   return `MODEL_ID_CUSTOM_${Array.from(name).map((char) => char.codePointAt(0).toString(16)).join('_')}`;
 }
 
+// Match the existing execution dispatcher's common/per-mode URL keys.
+export function modelUrlOverrideKey(name, mode = '') {
+  const model = name.replace(/[\s.-]/g, '_').toUpperCase();
+  const suffix = mode.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+  return `MODEL_URL_${model}${suffix ? `_${suffix}` : ''}`;
+}
+
 /** Returns true for the common provider credential shapes, which must never
  * be accepted as a custom model ID. */
 export function isLikelyProviderApiKey(value) {

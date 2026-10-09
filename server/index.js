@@ -50,6 +50,7 @@ import { createCodexService } from './agent/codex/codexService.js';
 import { createCanvasExternalService } from './agent/codex/canvasExternalService.js';
 import { createAgentWorkspaceStore, createAgentWorkspaceRouter } from './agent/agentWorkspaceStore.js';
 import { createCodexRouter } from './agent/codex/codexRouter.js';
+import { createCodexImageService } from './agent/codex/codexImageService.js';
 import { createGenerationPlanStore, createGenerationPlanRouter } from './agent/codex/generationPlanStore.js';
 import { createGenerationBudgetStore, createGenerationBudgetRouter } from './agent/codex/generationBudgetStore.js';
 import { createAgentSkillLibrary } from './agent/agentSkillLibrary.js';
@@ -447,6 +448,9 @@ app.use('/api', createLocalRuntimeRouter({
 }));
 
 const codexService = createCodexService({ privateDirectory: RUNTIME_PATHS.PRIVATE_DIR, skillLibrary: agentSkillLibrary });
+const codexImages = createCodexImageService({ privateDirectory: RUNTIME_PATHS.PRIVATE_DIR, libraryDirectory: BASE_LIBRARY_DIR });
+app.locals.CODEX_IMAGES = codexImages;
+process.once('exit', () => codexImages.dispose());
 app.use('/api/agent/workspace', createAgentWorkspaceRouter(createAgentWorkspaceStore(RUNTIME_PATHS.PRIVATE_DIR)));
 app.use('/api/preferences', createPreferenceRouter(createPreferenceStore(RUNTIME_PATHS.PRIVATE_DIR)));
 app.use('/api/appearance/background', createBackgroundRouter(createBackgroundStore(RUNTIME_PATHS.PRIVATE_DIR)));
@@ -732,6 +736,7 @@ app.use('/api/config', configRoutes);
 // 设置页按「站」分块渲染需要知道每站有哪些模型，这个对应关系只有后端目录里有。
 app.use('/api', createModelSourceRouter({
     getProviderConfiguration: async (_request, { waitForFresh = true } = {}) => {
+        const codexReady = await codexImages.ready();
         if (waitForFresh) await Promise.all([dreaminaCliInstaller.isAuthenticated(), libTvCli.isAuthenticated()]);
         else {
             void dreaminaCliInstaller.isAuthenticated().catch(() => false);
@@ -739,6 +744,7 @@ app.use('/api', createModelSourceRouter({
         }
         const dreaminaAuthenticated = dreaminaCliInstaller.getCachedAuthentication();
         return {
+            CodexImageProvider: codexReady,
             LibTvCliImageProvider: libTvCli.getCachedAuthentication(),
             LibTvCliVideoProvider: libTvCli.getCachedAuthentication(),
             DreaminaCliImageProvider: dreaminaAuthenticated,

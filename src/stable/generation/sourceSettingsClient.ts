@@ -12,6 +12,7 @@ export type SourceModel = {
   vision?: 'supported' | 'unsupported' | 'unknown';
   customModelId?: string;
   modelIds?: string[];
+  endpoints?: { mode: string; defaultUrl: string; customUrl: string }[];
   tier: string;
   variantLabel: string | null;
   requiredSecrets: string[];

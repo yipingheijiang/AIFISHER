@@ -3,7 +3,7 @@ import { access, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 
-export const codexRuntimePolicyVersion = 1;
+export const codexRuntimePolicyVersion = 2;
 
 export function openCodexLogin(url) {
   return new Promise((resolve, reject) => {
@@ -69,7 +69,7 @@ export async function readCodexVersion(command, prefix) {
   });
 }
 
-export function createCodexProcess({ home, cwd, launch = spawn, resolveCommand = findCodexCommand, readVersion = readCodexVersion, timeout = 30000 }) {
+export function createCodexProcess({ home, cwd, launch = spawn, resolveCommand = findCodexCommand, readVersion = readCodexVersion, timeout = 30000, imageGeneration = false }) {
   const events = new EventEmitter();
   let child, starting, sequence = 0, generation = 0, buffer = '';
   const pending = new Map();
@@ -116,6 +116,7 @@ export function createCodexProcess({ home, cwd, launch = spawn, resolveCommand =
         const proc = launch(command, [...prefix, 'app-server', '--listen', 'stdio://',
           '-c', 'cli_auth_credentials_store="keyring"',
           '-c', 'features.shell_tool=false', '-c', 'features.multi_agent=false',
+          '-c', `features.image_generation=${imageGeneration ? 'true' : 'false'}`,
           '-c', 'features.apps=false', '-c', 'features.code_mode=false',
           // Model metadata can select v2/code mode independently of old feature
           // flags. Disable the capabilities; code mode may wrap our dynamic tool.

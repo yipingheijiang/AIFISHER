@@ -288,7 +288,9 @@ router.post('/generate-image', async (req, res) => {
                             mode: imageMode || '',
                             aspectRatio,
                             resolution,
-                            ...(provider.providerName === 'SeedVr2ImageProvider'
+                            ...(provider.providerName === 'CodexImageProvider'
+                                ? { cost: null, costStatus: 'codex-usage', operation: 'codex-native-image' }
+                                : provider.providerName === 'SeedVr2ImageProvider'
                                 ? { cost: null, costStatus: 'unknown', operation: 'seedvr2-upscale' }
                                 : { cost: typeof cost === 'number' ? cost : 0 })
                         },
@@ -583,7 +585,9 @@ const recoverTask = createGenerationTaskRecovery({
             const resultUrls = results.map((image) => saveMediaBufferToFile(image.buffer, task.projectId || 'default', 'images', image.format, {
                 prompt: task.prompt, model: task.modelName, mode: task.imageMode || '',
                 aspectRatio: task.aspectRatio, resolution: task.resolution,
-                ...(task.providerName === 'SeedVr2ImageProvider'
+                ...(task.providerName === 'CodexImageProvider'
+                    ? { cost: null, costStatus: 'codex-usage', operation: 'codex-native-image' }
+                    : task.providerName === 'SeedVr2ImageProvider'
                     ? { cost: null, costStatus: 'unknown', operation: 'seedvr2-upscale' }
                     : { cost: task.estimatedCost || 0 }), generationAttemptId: task.attemptId,
             }, task.nodeId).url);
