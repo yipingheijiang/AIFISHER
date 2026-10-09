@@ -393,7 +393,6 @@ export function CanvasPromptEditor(React: Runtime, props: Props, vendorRuntime: 
             current.disableDirectEdit ||
             !view.editable ||
             event.shiftKey ||
-            event.ctrlKey ||
             event.metaKey ||
             event.altKey ||
             event.isComposing ||
@@ -401,6 +400,9 @@ export function CanvasPromptEditor(React: Runtime, props: Props, vendorRuntime: 
             event.keyCode === 229
           )
             return false;
+          // Plain Enter keeps the editor's normal newline behavior, except
+          // while a suggestion menu owns the confirmation key.
+          if (!event.ctrlKey && !popupRef.current) return false;
           event.preventDefault();
           if (event.repeat) return true;
           // editorProps runs before suggestion plugins. Confirm their selection

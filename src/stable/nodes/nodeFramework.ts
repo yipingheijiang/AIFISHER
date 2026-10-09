@@ -267,7 +267,8 @@ const STABLE_TYPE_ALIASES: Readonly<Record<string, string>> = {
 };
 
 const NATIVE_DEFAULT_IMAGE_MODEL = 'GPT Image 2';
-const DEFAULT_CANVAS_IMAGE_MODEL = 'GPT Image 2 · API';
+const LEGACY_CANVAS_IMAGE_MODEL = 'GPT Image 2 · API';
+export const DEFAULT_CANVAS_IMAGE_MODEL = 'Codex 内置生图';
 const DEFAULT_CANVAS_VIDEO_MODEL = 'Seedance 2.5 Standard · API';
 
 function canonicalType(type: string): string {
@@ -284,8 +285,8 @@ function applyCanvasNodeDefaults(candidate: Record<string, unknown>): Record<str
   }
   return {
     ...candidate,
-    model: DEFAULT_CANVAS_IMAGE_MODEL,
-    imageModel: DEFAULT_CANVAS_IMAGE_MODEL,
+    model: LEGACY_CANVAS_IMAGE_MODEL,
+    imageModel: LEGACY_CANVAS_IMAGE_MODEL,
     resolution: candidate.resolution || '1K',
   };
 }
@@ -298,6 +299,7 @@ function applyFreshCanvasNodeDefaults(candidate: Record<string, unknown>): Recor
       model: DEFAULT_CANVAS_IMAGE_MODEL,
       imageModel: DEFAULT_CANVAS_IMAGE_MODEL,
       resolution: '1K',
+      generateCount: 1,
     };
   }
   if (type === 'video') {

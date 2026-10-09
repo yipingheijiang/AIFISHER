@@ -1,4 +1,4 @@
-import { GenerationQueueStatus } from '../generation/GenerationQueueStatus';
+import { GenerationQueueCardControl, GenerationQueueStatus } from '../generation/GenerationQueueStatus';
 import type { CanvasComponent } from '../app/canvasComponentType';
 import { useGenerationAvailability } from './useGenerationAvailability';
 import {
@@ -203,8 +203,9 @@ export function CanvasAudioNode(
                   key={`mention-editor-${node.id}`}
                 />
               </div>
+              <div className="mb-2 text-[10px] text-[var(--af-text-muted)]" data-fisherai-generation-shortcut="true">Enter 换行 · Ctrl+Enter 生成</div>
               <GenerationQueueStatus node={node} onUpdate={onUpdate} />
-      {node.errorMessage && (
+              {node.errorMessage && (
                 <div
                   className={
                     'text-[var(--af-danger)] text-xs mb-2 p-1 bg-red-900/20 rounded border border-red-900/50'
@@ -346,6 +347,8 @@ export function CanvasAudioNode(
                       </div>
                     </Tooltip>
                     <button
+                      title="生成音频（Ctrl+Enter）"
+                      aria-keyshortcuts="Control+Enter"
                       aria-label="生成音频"
                       onClick={(re) => {
                         re.stopPropagation();
@@ -438,6 +441,7 @@ export function CanvasAudioNode(
         />
       )}
       {isVisible && <Player data={node} selected={selected} onAudioTrim={onAudioTrim} />}
+      {isVisible && <GenerationQueueCardControl node={node} onUpdate={onUpdate} />}
     </Frame>
   );
 }

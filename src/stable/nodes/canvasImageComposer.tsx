@@ -249,6 +249,7 @@ export function CanvasImageComposer(
         onUpdate={onUpdate}
         disabled={busy}
       />
+      <div className="mb-2 text-[10px] text-[var(--af-text-muted)]" data-fisherai-generation-shortcut="true">Enter 换行 · Ctrl+Enter 生成</div>
       <GenerationQueueStatus node={node} onUpdate={onUpdate} />
       {node.errorMessage && (
         <div
@@ -444,6 +445,8 @@ export function CanvasImageComposer(
               </div>
             </Tooltip>
             <button
+              title="生成图片（Ctrl+Enter）"
+              aria-keyshortcuts="Control+Enter"
               aria-label={busy ? '正在生成图片' : '生成图片'}
               aria-busy={busy ? 'true' : 'false'}
               data-fisherai-image-generate-state={busy ? 'loading' : 'idle'}

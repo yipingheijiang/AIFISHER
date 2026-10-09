@@ -147,6 +147,7 @@ export function CanvasTextComposer(
           key={`mention-editor-${node.id}`}
         />
       </div>
+      <div className="mb-2 text-[10px] text-[var(--af-text-muted)]" data-fisherai-generation-shortcut="true">Enter 换行 · Ctrl+Enter 生成</div>
       <GenerationQueueStatus node={node} onUpdate={onUpdate} />
       {node.errorMessage && (
         <div
@@ -246,6 +247,8 @@ export function CanvasTextComposer(
               </div>
             </Tooltip>
             <button
+              title="生成文本（Ctrl+Enter）"
+              aria-keyshortcuts="Control+Enter"
               aria-label="生成文本"
               onClick={(O) => {
                 O.stopPropagation();

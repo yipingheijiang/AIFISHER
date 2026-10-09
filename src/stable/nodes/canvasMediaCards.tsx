@@ -1,4 +1,5 @@
 import type { CanvasComponent } from '../app/canvasComponentType';
+import { GenerationQueueCardControl } from '../generation/GenerationQueueStatus';
 import type * as ReactTypes from 'react';
 import { CanvasTextNodeContent } from '../text/CanvasTextNodeContent';
 import { installGenerationScheduler } from '../generation/generationScheduler';
@@ -162,6 +163,7 @@ function MediaCard(
           {...previewProps}
         />
       )}
+      {(props.isVisible ?? true) && <GenerationQueueCardControl node={node} onUpdate={props.onUpdate} />}
     </Frame>
   );
 }
@@ -223,6 +225,7 @@ export function CanvasTextCard(
         onSelect={props.onSelect}
         renderHeader={(children) => <Header {...headerProps(props)}>{children}</Header>}
       />
+      <GenerationQueueCardControl node={node} onUpdate={onUpdate} />
       {props.selected && props.onResizeStart && showControls && (
         <div
           className="absolute -bottom-6 -right-6 w-14 h-14 cursor-nwse-resize z-50 flex items-center justify-center group/resize"

@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import { installNodeFramework } from './nodeFramework';
+import { DEFAULT_CANVAS_IMAGE_MODEL, installNodeFramework } from './nodeFramework';
 import { newNodeDimensions } from './nodeCreationDimensions';
 import { installStableCanvasClipboard } from '../canvas/canvasClipboard';
 import { connectCanvasNodes, type CanvasConnectionNode } from '../canvas/canvasConnections';
@@ -67,7 +67,7 @@ export function createCanvasNode(
   point: { x: number; y: number },
   projectId?: string,
 ): CanvasNode {
-  const image = runtime.imageModels[0],
+  const image = runtime.imageModels.find((entry) => entry.name === DEFAULT_CANVAS_IMAGE_MODEL) ?? runtime.imageModels[0],
     video = runtime.videoModels[0];
   const audio = runtime.audioModels[0],
     text = runtime.textModels[0];

@@ -102,11 +102,11 @@ async function mountEditor(overrides = {}) {
 }
 
 describe('generation prompt keyboard with the real Tiptap editor', () => {
-  it('submits Enter without a newline and synchronizes the current document first', async () => {
+  it('submits Ctrl+Enter without a newline and synchronizes the current document first', async () => {
     const page = await mountEditor();
     await page.content('<p>最新提示词</p>', false);
     page.changes.mockClear();
-    const event = page.key();
+    const event = page.key({ ctrlKey: true });
     expect(event.defaultPrevented).toBe(true);
     expect(page.changes).toHaveBeenLastCalledWith('最新提示词');
     expect(page.submits).toHaveBeenCalledOnce();
@@ -115,8 +115,13 @@ describe('generation prompt keyboard with the real Tiptap editor', () => {
     expect(page.editor.getText()).toBe('最新提示词');
   });
 
-  it('uses the native hard break for Shift+Enter and keeps ordinary editors unchanged', async () => {
+  it('keeps native Enter paragraphs, Shift+Enter hard breaks, and ordinary editors unchanged', async () => {
     const page = await mountEditor();
+    page.key();
+    expect(page.editor.getJSON().content).toHaveLength(2);
+    expect(page.changes).toHaveBeenLastCalledWith('画一条鱼\n');
+    expect(page.submits).not.toHaveBeenCalled();
+    await page.content('<p>画一条鱼</p>');
     page.key({ shiftKey: true });
     expect(page.submits).not.toHaveBeenCalled();
     expect(page.editor.getJSON().content[0].content.at(-1).type).toBe('hardBreak');
@@ -124,24 +129,38 @@ describe('generation prompt keyboard with the real Tiptap editor', () => {
     page.rerenderProps({ onSubmit: undefined });
     page.key();
     expect(page.editor.getJSON().content).toHaveLength(2);
+    page.key({ ctrlKey: true });
     expect(page.submits).not.toHaveBeenCalled();
+  });
+
+  it('submits only the exact Ctrl+Enter chord, without Shift, Alt, or Meta', async () => {
+    const page = await mountEditor();
+    for (const modifiers of [
+      { ctrlKey: true, shiftKey: true },
+      { ctrlKey: true, altKey: true },
+      { ctrlKey: true, metaKey: true },
+      { metaKey: true },
+    ]) page.key(modifiers);
+    expect(page.submits).not.toHaveBeenCalled();
+    page.key({ ctrlKey: true });
+    expect(page.submits).toHaveBeenCalledOnce();
   });
 
   it('ignores IME Enter, the composing view, legacy key 229, and long-press repeats', async () => {
     const page = await mountEditor();
     // Standalone flags prove the submit guard only. Without compositionstart,
     // ProseMirror's native keymap can still treat a synthetic Enter as a newline.
-    page.key({ isComposing: true });
-    page.key({ keyCode: 229 });
+    page.key({ ctrlKey: true, isComposing: true });
+    page.key({ ctrlKey: true, keyCode: 229 });
     Object.defineProperty(page.editor.view, 'composing', { configurable: true, value: true });
-    page.key();
+    page.key({ ctrlKey: true });
     Object.defineProperty(page.editor.view, 'composing', { configurable: true, value: false });
     const beforeRepeat = page.editor.getJSON();
-    const repeated = page.key({ repeat: true });
+    const repeated = page.key({ ctrlKey: true, repeat: true });
     expect(repeated.defaultPrevented).toBe(true);
     expect(page.submits).not.toHaveBeenCalled();
     expect(page.editor.getJSON()).toEqual(beforeRepeat);
-    page.key();
+    page.key({ ctrlKey: true });
     expect(page.submits).toHaveBeenCalledOnce();
   });
 
@@ -151,6 +170,7 @@ describe('generation prompt keyboard with the real Tiptap editor', () => {
     act(() => { fireEvent.compositionStart(page.editor.view.dom); });
     expect(page.editor.view.composing).toBe(true);
     const confirming = page.key({ keyCode: 229, isComposing: true });
+    page.key({ ctrlKey: true, keyCode: 229, isComposing: true });
     expect(confirming.defaultPrevented).toBe(false);
     expect(page.editor.getJSON()).toEqual(before);
     expect(page.submits).not.toHaveBeenCalled();
@@ -162,36 +182,47 @@ describe('generation prompt keyboard with the real Tiptap editor', () => {
 
   it('does not submit in read-only mode and uses the latest optional callback', async () => {
     const page = await mountEditor({ disableDirectEdit: true });
-    page.key();
+    page.key({ ctrlKey: true });
     expect(page.submits).not.toHaveBeenCalled();
     const replacement = vi.fn();
     page.rerenderProps({ disableDirectEdit: false, onSubmit: replacement });
-    page.key();
+    page.key({ ctrlKey: true });
     expect(page.submits).not.toHaveBeenCalled();
     expect(replacement).toHaveBeenCalledOnce();
   });
 
-  it('confirms an active @ mention before a subsequent Enter can submit', async () => {
+  it.each([
+    { label: 'Enter', modifiers: {} },
+    { label: 'Ctrl+Enter', modifiers: { ctrlKey: true } },
+  ])('confirms an active @ mention with $label before a later Ctrl+Enter can submit', async ({ modifiers }) => {
     const page = await mountEditor();
     await page.content('<p>@</p>');
     await waitFor(() => expect(page.menus.at(-1)?.items).toHaveLength(1));
-    page.key();
+    page.key({ ctrlKey: true, repeat: true });
+    expect(page.selections).not.toHaveBeenCalled();
+    expect(page.submits).not.toHaveBeenCalled();
+    page.key(modifiers);
     expect(page.selections).toHaveBeenCalledOnce();
     expect(page.submits).not.toHaveBeenCalled();
     expect(page.editor.getJSON().content[0].content[0].type).toBe('mention');
-    page.key();
+    page.key({ ctrlKey: true });
     expect(page.submits).toHaveBeenCalledOnce();
     expect(page.changes).toHaveBeenLastCalledWith('{image1}');
   });
 
-  it('confirms a loaded prompt preset without submitting generation', async () => {
+  it.each([
+    { label: 'Enter', modifiers: {} },
+    { label: 'Ctrl+Enter', modifiers: { ctrlKey: true } },
+  ])('confirms a loaded prompt preset with $label without submitting generation', async ({ modifiers }) => {
     const page = await mountEditor();
     await page.content('<p>\\</p>');
     await waitFor(() => expect(page.menus.at(-1)?.items).toHaveLength(1));
-    page.key();
+    page.key(modifiers);
     expect(page.selections).toHaveBeenCalledWith('preset', expect.objectContaining({ title: '蓝鱼' }));
     expect(page.submits).not.toHaveBeenCalled();
     expect(page.changes).toHaveBeenLastCalledWith('[[蓝鱼|a blue fish]]');
+    page.key({ ctrlKey: true });
+    expect(page.submits).toHaveBeenCalledOnce();
   });
 
   it('never submits from an empty candidate menu; Shift+Enter still inserts a hard break', async () => {
@@ -199,7 +230,8 @@ describe('generation prompt keyboard with the real Tiptap editor', () => {
     await page.content('<p>@</p>');
     expect(page.menus.at(-1)?.items).toHaveLength(0);
     page.key();
-    page.key({ repeat: true });
+    page.key({ ctrlKey: true });
+    page.key({ ctrlKey: true, repeat: true });
     expect(page.submits).not.toHaveBeenCalled();
     expect(page.editor.getText()).toBe('@');
     page.key({ shiftKey: true });
@@ -207,12 +239,12 @@ describe('generation prompt keyboard with the real Tiptap editor', () => {
     expect(page.submits).not.toHaveBeenCalled();
   });
 
-  it('allows Enter to submit after Escape has dismissed a suggestion', async () => {
+  it('allows Ctrl+Enter to submit after Escape has dismissed a suggestion', async () => {
     const page = await mountEditor();
     await page.content('<p>@</p>');
     await waitFor(() => expect(page.menus.at(-1)?.items).toHaveLength(1));
     act(() => { fireEvent.keyDown(page.editor.view.dom, { key: 'Escape' }); });
-    page.key();
+    page.key({ ctrlKey: true });
     expect(page.selections).not.toHaveBeenCalled();
     expect(page.submits).toHaveBeenCalledOnce();
   });
