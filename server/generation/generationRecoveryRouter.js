@@ -5,7 +5,10 @@ import path from 'node:path';
 function taskResponse(task) {
   if (!task) return null;
   if (task.status === 'loading' || task.status === 'queued') {
-    return { status: 'pending', attemptId: task.attemptId };
+    return { status: 'pending', attemptId: task.attemptId,
+      phase: task.status === 'queued' ? 'queued' : 'loading',
+      ...(task.status === 'queued' ? { queuePosition: task.queuePosition } : {}),
+      queuedAt: task.queuedAt, startedAt: task.startedAt || (task.status === 'loading' ? task.createdAt : undefined) };
   }
   const diagnostics = {
     attemptId: task.attemptId,
@@ -84,12 +87,15 @@ export function createGenerationRecoveryRouter({ coordinator, getUrlPrefix, reco
 
   router.post('/generation-cancel/:nodeId', (req, res) => {
     // Agent cancellation binds to the observed attempt. A stale UI must never cancel a newer task.
-    if (req.body?.attemptId !== undefined || req.body?.projectId !== undefined) {
+    if (req.body?.onlyQueued === true || req.body?.attemptId !== undefined || req.body?.projectId !== undefined) {
       const task = coordinator.getTask(req.params.nodeId);
       if (!task || !req.body.attemptId || task.attemptId !== req.body.attemptId || task.projectId !== req.body.projectId)
         return res.status(409).json({ code: 'GENERATION_ATTEMPT_CONFLICT', status: 'unknown' });
     }
-    const result = coordinator.cancel(req.params.nodeId);
+    if (req.body?.onlyQueued === true && coordinator.getTask(req.params.nodeId)?.status !== 'queued') {
+      return res.status(409).json({ code: 'GENERATION_NOT_QUEUED', error: '任务已开始或结束，未取消生成。' });
+    }
+    const result = coordinator.cancel(req.params.nodeId, req.body?.attemptId);
     if (!result.ok) {
       return res.status(409).json({
         error: '该生成任务当前不可取消。',

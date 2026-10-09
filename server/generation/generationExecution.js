@@ -68,7 +68,7 @@ export async function executeGenerationTask({
       message: `当前模型不支持${kind || '此类'}生成。`,
     });
   }
-  const lease = coordinator.begin({
+  const lease = await (coordinator.acquire || coordinator.begin)({
     nodeId,
     attemptId: request.generationAttemptId,
     kind,

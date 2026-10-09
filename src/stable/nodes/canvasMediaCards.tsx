@@ -96,7 +96,7 @@ function MediaCard(
       >
         <Composer
           data={node}
-          isLoading={node.status === 'loading'}
+          isLoading={node.status === 'loading' || node.status === 'queued'}
           inputUrl={props.inputUrl}
           connectedImageNodes={props.connectedImageNodes}
           onUpdate={props.onUpdate}

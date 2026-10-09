@@ -17,7 +17,6 @@ import {
   buildImageRequest,
   buildTextRequest,
   buildVideoRequest,
-  effectiveVideoMode,
   finite,
   text,
   type GenerationModels,
@@ -71,18 +70,29 @@ function timeoutFor(estimate: string | undefined, multiplier: unknown) {
           : amount;
   return Math.max(1000, milliseconds * 3 * Math.max(1, finite(multiplier, 1)));
 }
-export async function observeWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+export async function observeWithin<T>(promise: Promise<T>, timeoutMs: number, isQueued: () => boolean = () => false): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let remaining = timeoutMs;
+  let observedAt = Date.now();
+  let wasQueued = isQueued();
   const limit = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () =>
+    const check = () => {
+      const now = Date.now(), queued = isQueued();
+      // Start a full observation window when admission is first observed.
+      if (!queued && !wasQueued) remaining -= now - observedAt;
+      observedAt = now;
+      wasQueued = queued;
+      if (remaining <= 0) {
         reject(
           Object.assign(new Error('等待结果超时，正在核对原任务，请勿重复生成。'), {
             code: 'GENERATION_OBSERVATION_INTERRUPTED',
           }),
-        ),
-      timeoutMs,
-    );
+        );
+        return;
+      }
+      timer = setTimeout(check, Math.min(1000, remaining));
+    };
+    timer = setTimeout(check, Math.min(1000, timeoutMs));
   });
   try {
     return await Promise.race([promise, limit]);
@@ -132,6 +142,7 @@ export function createCanvasGeneration(
         disposed ||
         binding.isActive?.() === false ||
         !node ||
+        ['queued', 'loading'].includes(text(node.status)) ||
         !['Image', 'Video', 'Audio', 'Text'].includes(node.type)
       )
         return;
@@ -160,6 +171,10 @@ export function createCanvasGeneration(
         return [...dependencies].every(([id, parent]) => current.get(id) === parent);
       };
       let startedAt: number | undefined;
+      const duration = () => {
+        const executionStart = binding.getNodes().find(candidate => candidate.id === id)?.generationExecutionStartedAt;
+        return startedAt === undefined ? undefined : Math.max(0, runtime.now() - (typeof executionStart === 'number' ? executionStart : startedAt));
+      };
       const owns = () => {
         const current = binding.getNodes().find((candidate) => candidate.id === id);
         return (
@@ -189,18 +204,6 @@ export function createCanvasGeneration(
         const prompt = expandPromptTags(scheduler.buildPrompt(nodes, node), {
           trailingParameters: node.imageModel === 'Midjourney Imagine · API',
         });
-        const mode =
-          node.type === 'Video'
-            ? effectiveVideoMode(nodes, node, model)
-            : text(
-                node[
-                  node.type === 'Image'
-                    ? 'imageMode'
-                    : node.type === 'Audio'
-                      ? 'audioMode'
-                      : 'languageMode'
-                ],
-              );
         const lyrics = node.type === 'Audio' && node.audioMode === 'lyrics-to-music';
         const stems = node.type === 'Audio' && node.audioModel === 'Suno Stems · API';
         const klingFrames =
@@ -222,17 +225,6 @@ export function createCanvasGeneration(
           });
           return;
         }
-        if (modelName) {
-          const concurrency = await runtime.concurrency(modelName, mode);
-          if (!owns()) return;
-          if (concurrency.blocked) {
-            publish({
-              status: 'error',
-              errorMessage: `${concurrency.modelId || modelName} 并发已满${concurrency.inFlight}/${concurrency.maxConcurrent}，请稍后再试。`,
-            });
-            return;
-          }
-        }
         const request = await prepareCanvasGenerationRequest(nodes, node, projectId, models);
         if (!owns()) return;
         if (authorization && (!authorization.valid() || authorization.request !== JSON.stringify(request))) return;
@@ -242,8 +234,12 @@ export function createCanvasGeneration(
         }
         // Keep previous visual media and its geometry until the new result is ready.
         const loading = {
-          status: 'loading',
+          status: 'queued',
+          projectId: projectId || undefined,
           generationStartTime: runtime.now(),
+          generationQueuedAt: runtime.now(),
+          generationQueuePosition: undefined,
+          generationExecutionStartedAt: undefined,
           generationAttemptId: attempt,
           generationDiagnosticCode: undefined,
           errorMessage: undefined,
@@ -260,9 +256,10 @@ export function createCanvasGeneration(
           node.type === 'Video' ? node.duration : node.generateCount,
         );
         authorization?.submitted(attempt);
+        const isQueued = () => binding.getNodes().find(candidate => candidate.id === id)?.status === 'queued';
         let patch: Partial<CanvasNode>;
         if (node.type === 'Text') {
-          const result = await observeWithin(runtime.text(ownedRequest), timeout);
+          const result = await observeWithin(runtime.text(ownedRequest), timeout, isQueued);
           patch = { textContent: result.text };
         } else {
           const generate =
@@ -271,7 +268,7 @@ export function createCanvasGeneration(
               : node.type === 'Video'
                 ? runtime.video
                 : runtime.audio;
-          const result = await observeWithin(generate(ownedRequest), timeout);
+          const result = await observeWithin(generate(ownedRequest), timeout, isQueued);
           if (!owns()) return;
           const urls = (Array.isArray(result) ? result : [result]).map((url) =>
             withTimestamp(url, runtime.now()),
@@ -300,7 +297,10 @@ export function createCanvasGeneration(
           networkUrl: null,
           generationStartTime: undefined,
           generationAttemptId: undefined,
-          generationDurationMs: runtime.now() - startedAt,
+          generationQueuedAt: undefined,
+          generationQueuePosition: undefined,
+          generationExecutionStartedAt: undefined,
+          generationDurationMs: duration(),
           generationDiagnosticCode: undefined,
         });
       } catch (error) {
@@ -313,12 +313,15 @@ export function createCanvasGeneration(
           ? '权限被拒绝。请检查 API Key 配置。'
           : failure.message || '生成任务失败';
         publish({
-          status: 'error',
+          status: code === 'GENERATION_CANCELLED' ? 'cancelled' : 'error',
           errorMessage: message,
           generationDiagnosticCode: code,
           generationStartTime: undefined,
           generationAttemptId: undefined,
-          generationDurationMs: startedAt === undefined ? undefined : runtime.now() - startedAt,
+          generationQueuedAt: undefined,
+          generationQueuePosition: undefined,
+          generationExecutionStartedAt: undefined,
+          generationDurationMs: duration(),
           ...(startedAt === undefined
             ? {}
             : interruptedGenerationPatch(Object.assign(failure, { code }), attempt)),

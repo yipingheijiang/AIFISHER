@@ -12,7 +12,7 @@ Automatic drama/fight recipes that require the retired scene provider are disabl
 
 Validated on Windows x64 with Node.js 24.20.0 and Electron 44.3.0:
 
-- `npm run check`: type checking, regression tests, model catalog generation, canvas build, and launcher build passed. The latest unit suite contains 32 passing tests after native Codex integration.
+- `npm run check`: type checking, regression tests, model catalog generation, canvas build, and launcher build passed. The latest unit suite contains 54 passing tests after generation queue and prompt keyboard integration.
 - Actual Electron testing covered the dashboard, five settings sections, canvas, save/restart persistence, workspace switching and return, video import, trimming, and frame extraction.
 - Application HTTP/HTTPS/WS/WSS public requests were refused during the core test. Core flows produced zero requests to the retired operator and zero public network attempts; separate intentional Electron main/renderer probes were blocked. This was application boundary observation, not packet capture.
 - Existing files and database records were compared with a pre-change backup and preserved. Test projects, media, and temporary workspaces were removed.
@@ -42,6 +42,14 @@ The original Codex thread and attempt are recorded before submission. Transport 
 The native protocol has no hard generation-count or spending-ceiling field. The adapter requests one image and interrupts the agent on the first image result; this is not a guaranteed numeric quota ceiling. Account usage and availability are controlled by Codex. See the [official image generation guide](https://learn.chatgpt.com/docs/image-generation).
 
 Existing canvas assistant conversations created under the previous runtime permissions require a new conversation; their original records are retained.
+
+## Generation queue and prompt keys
+
+When a model reaches its configured concurrency limit, the canvas still accepts new generation requests. They wait in submission order for the same physical model; different models can run independently. The canvas shows 排队中 and the current queue position, then starts automatically when a slot is free. Waiting does not call the provider or consume the generation observation timeout. 取消排队 only cancels a still-waiting task; if it has already started, that action leaves generation running.
+
+In image, video, audio and text generation prompt fields, Enter submits through the same action as the generate button. Shift+Enter inserts a newline. Chinese input method confirmation and active reference/preset menus take priority, and held Enter cannot submit repeated tasks. Ordinary text-node content retains its editing behavior.
+
+The queue is scheduled by the current local service. Restarting the service ends tasks that were still waiting with a clear not-submitted result; users can submit them again manually. It does not automatically replay waiting or unconfirmed provider requests. Mock-provider execution and actual Electron canvas checks verified admission order, queue cancellation, automatic start, prompt keys and saved results without using image-generation quota or changing provider credentials.
 
 ## Running and updating
 

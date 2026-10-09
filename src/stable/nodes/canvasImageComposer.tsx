@@ -1,3 +1,4 @@
+import { GenerationQueueStatus } from '../generation/GenerationQueueStatus';
 import { generationUnitPrice } from '../generation/canvasGenerationRequests';
 import { useGenerationAvailability } from './useGenerationAvailability';
 import {
@@ -65,7 +66,7 @@ export function CanvasImageComposer(
     : hasImageInput
       ? '当前模型不支持图片输入'
       : '当前模型不支持文生图';
-  const busy = useComposerBusy(React, node.id, isLoading);
+  const busy = useComposerBusy(React, node.id, isLoading || node.status === 'queued');
   const { checking, blocked, warning } = useGenerationAvailability(
     React,
     model.name,
@@ -227,6 +228,7 @@ export function CanvasImageComposer(
       >
         <CreativePromptTokens data={node} onUpdate={onUpdate} disabled={busy} />
         <PromptEditor
+          onSubmit={() => { if (!disabled) onGenerate(node.id); }}
           type={'image'}
           value={node.prompt || ''}
           onChange={(j) => onUpdate(node.id, { prompt: j })}
@@ -247,6 +249,7 @@ export function CanvasImageComposer(
         onUpdate={onUpdate}
         disabled={busy}
       />
+      <GenerationQueueStatus node={node} onUpdate={onUpdate} />
       {node.errorMessage && (
         <div
           className={

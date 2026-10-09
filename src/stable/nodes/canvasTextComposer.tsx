@@ -1,3 +1,4 @@
+import { GenerationQueueStatus } from '../generation/GenerationQueueStatus';
 import type { ConnectedAssetsProps } from './canvasConnectedAssets';
 import type * as ReactTypes from 'react';
 import type { CanvasPromptEditor } from '../prompt/canvasPromptEditor';
@@ -96,7 +97,7 @@ export function CanvasTextComposer(
     scheduler?.version || zero,
     zero,
   );
-  const busy = node.status === 'loading' || !!scheduler?.isInFlight(node.id);
+  const busy = (node.status === 'loading' || node.status === 'queued') || !!scheduler?.isInFlight(node.id);
   const dynamicPrice =
     model.priceTextByMode?.[node.languageMode || model.languageModes?.[0]?.value || '']?.default;
   const priceLabel = dynamicPrice
@@ -135,6 +136,7 @@ export function CanvasTextComposer(
         }}
       >
         <PromptEditor
+          onSubmit={() => { if (!disabled) onGenerate(node.id); }}
           type={'text'}
           value={node.prompt || ''}
           onChange={(O) => onUpdate(node.id, { prompt: O })}
@@ -145,6 +147,7 @@ export function CanvasTextComposer(
           key={`mention-editor-${node.id}`}
         />
       </div>
+      <GenerationQueueStatus node={node} onUpdate={onUpdate} />
       {node.errorMessage && (
         <div
           className={

@@ -62,6 +62,7 @@ interface Vendor {
 interface Props {
   value: string;
   onChange(value: string): void;
+  onSubmit?(): void;
   connectedAssets?: PromptAsset[];
   placeholder?: string;
   isDark?: boolean;
@@ -187,6 +188,16 @@ export function CanvasPromptEditor(React: Runtime, props: Props, vendorRuntime: 
       const handlers = popup.handlers;
       return {
         ...handlers,
+        onKeyDown: (value: { event: KeyboardEvent }) => {
+          // Let the editor's normal hard-break shortcut handle Shift+Enter.
+          if (
+            currentRef.current.onSubmit &&
+            value.event.key === 'Enter' &&
+            value.event.shiftKey
+          )
+            return false;
+          return handlers.onKeyDown(value);
+        },
         onStart: (value: SuggestionProps) => {
           loadRef.current?.abort();
           setPresetError('');
@@ -371,6 +382,39 @@ export function CanvasPromptEditor(React: Runtime, props: Props, vendorRuntime: 
           'aria-label': '提示词',
         },
         editable: () => !currentRef.current.disableDirectEdit,
+        handleKeyDown: (
+          view: { composing: boolean; editable: boolean },
+          event: KeyboardEvent,
+        ) => {
+          const current = currentRef.current;
+          if (
+            event.key !== 'Enter' ||
+            !current.onSubmit ||
+            current.disableDirectEdit ||
+            !view.editable ||
+            event.shiftKey ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.altKey ||
+            event.isComposing ||
+            view.composing ||
+            event.keyCode === 229
+          )
+            return false;
+          event.preventDefault();
+          if (event.repeat) return true;
+          // editorProps runs before suggestion plugins. Confirm their selection
+          // here so this same Enter cannot also submit a generation.
+          if (popupRef.current) {
+            popupRef.current.handlers.onKeyDown({ event });
+            return true;
+          }
+          const editor = editorRef.current;
+          if (!editor || editor.isDestroyed) return true;
+          sync(editor);
+          current.onSubmit();
+          return true;
+        },
       },
     },
     [],

@@ -77,7 +77,7 @@ export function CanvasVideoPlayer(
       operationRef.current = null;
     };
   }, [data.id, data.projectId, data.resultUrl]);
-  const isLoading = data.status === 'loading',
+  const isLoading = (data.status === 'loading' || data.status === 'queued'),
     hasResult = !!data.resultUrl;
   const togglePlay = (event: ReactTypes.SyntheticEvent) => {
     event.stopPropagation();
@@ -331,7 +331,7 @@ export function CanvasVideoPlayer(
               )}
             </div>
           )}
-          {isLoading && <GenerationWaiting operation="视频生成" />}
+          {isLoading && <GenerationWaiting queued={data.status === 'queued'} position={data.generationQueuePosition} operation="视频生成" />}
         </div>
       ) : (
         <div
@@ -360,7 +360,7 @@ export function CanvasVideoPlayer(
             </div>
           )}
           {isLoading ? (
-            <GenerationWaiting operation="视频生成" />
+            <GenerationWaiting queued={data.status === 'queued'} position={data.generationQueuePosition} operation="视频生成" />
           ) : (
             <div className={'relative z-10 flex flex-col items-center gap-3'}>
               <div className={'text-[var(--af-text-muted)]'}>

@@ -30,9 +30,9 @@ export function useGenerationAvailability(React: Runtime, model: string, mode: s
           setState({
             key,
             checking: false,
-            blocked: result.blocked,
+            blocked: false,
             warning: result.blocked
-              ? `${result.modelId || model} 并发已满 ${result.inFlight}/${result.maxConcurrent}`
+              ? `${result.modelId || model} 并发已满 ${result.inFlight}/${result.maxConcurrent}，提交后将排队`
               : '',
           });
       } catch {
@@ -41,7 +41,7 @@ export function useGenerationAvailability(React: Runtime, model: string, mode: s
             key,
             checking: false,
             blocked: false,
-            warning: '暂时无法读取并发状态，生成前会再次检查',
+            warning: '暂时无法读取并发状态，提交后由本机调度',
           });
       } finally {
         clearTimeout(timeout);

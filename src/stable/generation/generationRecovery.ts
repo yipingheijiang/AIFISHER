@@ -25,6 +25,10 @@ export interface GenerationRecoverySession {
 
 interface RecoveryResponse {
   status: string;
+  phase?: string;
+  queuePosition?: number;
+  queuedAt?: string;
+  startedAt?: string;
   recoveryPending?: boolean;
   attemptId?: string;
   type?: string;
@@ -63,7 +67,7 @@ export function interruptedGenerationPatch(
 
 function eligible(node: RecoverableNode): boolean {
   return (
-    (node.status === 'loading' ||
+    (node.status === 'loading' || node.status === 'queued' ||
       (node.status === 'error' &&
         Boolean(node.generationAttemptId) &&
         node.generationDiagnosticCode === OBSERVATION_INTERRUPTED)) &&
@@ -85,6 +89,18 @@ function terminalPatch(
   result: RecoveryResponse,
   node: RecoverableNode,
 ): Record<string, unknown> | null {
+  if (result.status === 'pending' && ['queued', 'loading'].includes(result.phase || '')) {
+    const timestamp = (value: string | undefined) => value && Number.isFinite(Date.parse(value)) ? Date.parse(value) : undefined;
+    const patch = {
+      status: result.phase,
+      errorMessage: undefined,
+      generationDiagnosticCode: undefined,
+      generationQueuePosition: result.phase === 'queued' ? result.queuePosition : undefined,
+      generationQueuedAt: timestamp(result.queuedAt) ?? node.generationQueuedAt,
+      generationExecutionStartedAt: timestamp(result.startedAt),
+    };
+    return Object.entries(patch).some(([key, value]) => node[key] !== value) ? patch : null;
+  }
   if (result.status === 'unknown' && result.recoveryPending && node.generationAttemptId) {
     const errorMessage = result.error || '正在核对原生成任务，请勿重复生成。';
     if (
@@ -102,6 +118,9 @@ function terminalPatch(
   const diagnostics = {
     generationStartTime: undefined,
     generationAttemptId: undefined,
+    generationQueuedAt: undefined,
+    generationQueuePosition: undefined,
+    generationExecutionStartedAt: undefined,
     generationDiagnosticCode: result.diagnosticCode || result.code,
     generationDurationMs: result.durationMs,
     generationEstimatedCost: result.estimatedCost,
@@ -117,7 +136,7 @@ function terminalPatch(
             ...mergeImageResultHistory(node, result.resultUrls),
           }
         : {}),
-      status: 'error',
+      status: result.status === 'cancelled' ? 'cancelled' : 'error',
       errorMessage:
         result.error ||
         (result.status === 'cancelled'
@@ -158,7 +177,7 @@ function terminalPatch(
 /** Owns read-only recovery for one mounted canvas. Never submits a generation request. */
 export function mountGenerationRecovery(
   binding: GenerationRecoveryBinding,
-  { fetchImpl = window.fetch.bind(window), intervalMs = 10_000, requestTimeoutMs = 15_000 } = {},
+  { fetchImpl = window.fetch.bind(window), intervalMs = 2_000, requestTimeoutMs = 15_000 } = {},
 ): GenerationRecoverySession {
   let disposed = false;
   const requests = new Map<string, { expected: RecoverableNode; abort: AbortController }>();

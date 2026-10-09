@@ -1,3 +1,4 @@
+import { GenerationQueueStatus } from '../generation/GenerationQueueStatus';
 import type { CanvasComponent } from '../app/canvasComponentType';
 import { useGenerationAvailability } from './useGenerationAvailability';
 import {
@@ -86,7 +87,7 @@ export function CanvasAudioNode(
   const [modeOpen, setModeOpen] = React.useState(false),
     [advancedOpen, setAdvancedOpen] = React.useState(false),
     [editing, setEditing] = React.useState(false);
-  const busy = useComposerBusy(React, node.id, node.status === 'loading');
+  const busy = useComposerBusy(React, node.id, (node.status === 'loading' || node.status === 'queued'));
   const model: AudioModel = models.find((candidate) => candidate.name === node.audioModel) ||
     models[0] || { name: '' };
   const mode = node.audioMode || model.audioModes?.[0]?.value || '';
@@ -191,6 +192,7 @@ export function CanvasAudioNode(
                 }}
               >
                 <PromptEditor
+          onSubmit={() => { if (!disabled) onGenerate(node.id); }}
                   type={'audio'}
                   value={node.prompt || ''}
                   onChange={(re) => onUpdate(node.id, { prompt: re })}
@@ -201,7 +203,8 @@ export function CanvasAudioNode(
                   key={`mention-editor-${node.id}`}
                 />
               </div>
-              {node.errorMessage && (
+              <GenerationQueueStatus node={node} onUpdate={onUpdate} />
+      {node.errorMessage && (
                 <div
                   className={
                     'text-[var(--af-danger)] text-xs mb-2 p-1 bg-red-900/20 rounded border border-red-900/50'

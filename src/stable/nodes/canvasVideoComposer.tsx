@@ -1,3 +1,4 @@
+import { GenerationQueueStatus } from '../generation/GenerationQueueStatus';
 import { useGenerationAvailability } from './useGenerationAvailability';
 import { CreativeLibraryTools, CreativePromptTokens } from '../prompt/CreativeLibrary';
 import { rememberNodeDimensions } from './nodeCreationDimensions';
@@ -89,7 +90,7 @@ export function CanvasVideoComposer(
   React.useEffect(() => {
     if (node.duration !== duration) onUpdate(node.id, { duration });
   }, [node.id, node.duration, duration, onUpdate]);
-  const busy = useComposerBusy(React, node.id, isLoading),
+  const busy = useComposerBusy(React, node.id, isLoading || node.status === 'queued'),
     pricing = useComposerPricing(React),
     deferredPrice = ['dreamina_cli', 'libtv_cli'].includes(model.source || ''),
     creditProvider = model.source === 'libtv_cli' ? 'LibTV' : '即梦';
@@ -248,6 +249,7 @@ export function CanvasVideoComposer(
       >
         <CreativePromptTokens data={node} onUpdate={onUpdate} disabled={busy} />
         <PromptEditor
+          onSubmit={() => { if (!disabled) onGenerate(node.id); }}
           type={'video'}
           value={boundText ? boundText.value : node.prompt || ''}
           onChange={(J) =>
@@ -263,6 +265,7 @@ export function CanvasVideoComposer(
         />
       </div>
       <CreativeLibraryTools data={node} onUpdate={onUpdate} disabled={busy} />
+      <GenerationQueueStatus node={node} onUpdate={onUpdate} />
       {node.errorMessage && (
         <div
           className={

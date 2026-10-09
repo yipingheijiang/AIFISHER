@@ -131,6 +131,17 @@ export class GenerationTaskJournal {
     const currentTime = this.now();
     const timestamp = new Date(currentTime).toISOString();
     for (const task of this.tasks.values()) {
+      if (task.status === 'queued' && task.phase === 'waiting-for-slot'
+        && task.remoteSubmissionStarted !== true && !task.remoteTasks?.length && !task.remoteTask) {
+        Object.assign(task, {
+          status: 'failed', phase: 'not-submitted', queuePosition: undefined,
+          code: 'GENERATION_NOT_SUBMITTED', diagnosticCode: 'GENERATION_NOT_SUBMITTED',
+          error: '生成服务曾中断，排队任务没有提交，请重新生成。', retryable: false,
+          remoteMayContinue: false, updatedAt: timestamp, finishedAt: timestamp,
+        });
+        changed = true;
+        continue;
+      }
       if (task.providerName === 'CodexImageProvider' && ['loading', 'queued', 'unknown'].includes(task.status)
         && task.remoteSubmissionStarted !== true && !task.remoteTasks?.length && !task.remoteTask) {
         Object.assign(task, {

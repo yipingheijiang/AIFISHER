@@ -48,7 +48,7 @@ export function CanvasImagePreview(
     scheduler?.version || zero,
     zero,
   );
-  const busy = node.status === 'loading' || !!scheduler?.isInFlight(node.id);
+  const busy = (node.status === 'loading' || node.status === 'queued') || !!scheduler?.isInFlight(node.id);
   const hasResult = !!node.resultUrl;
   const fileInput = React.useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = React.useState(false);
@@ -137,7 +137,7 @@ export function CanvasImagePreview(
     return { width: `${width}px`, height: `${height}px`, ...offsets[index % 4], zIndex: 50 };
   };
   const exposureOverlay = () => (
-    <GenerationWaiting operation={node.mediaOperation === 'seedvr2-upscale' ? 'SeedVR2 高清放大' : '图片生成'} />
+    <GenerationWaiting queued={node.status === 'queued'} position={node.generationQueuePosition} operation={node.mediaOperation === 'seedvr2-upscale' ? 'SeedVR2 高清放大' : '图片生成'} />
   );
 
   const historyControl =

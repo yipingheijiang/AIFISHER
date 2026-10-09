@@ -42,7 +42,12 @@ export function createGenerationCoordinator({
   const leases = new Map();
   const tasks = new Map();
   const controllers = new Map();
+  const waitingByModelId = new Map();
+  const waitingByNodeId = new Map();
+  const scheduledModels = new Set();
   let leaseSeed = 0;
+  let queueSeed = 0;
+  let disposed = false;
 
   function persist(task) {
     taskStore?.upsert?.(cloneTask(task));
@@ -56,7 +61,64 @@ export function createGenerationCoordinator({
       maxConcurrent: limit,
       available: limit === 0 ? null : Math.max(0, limit - inFlight),
       blocked: limit > 0 && inFlight >= limit,
+      queued: waitingByModelId.get(modelIdKey)?.length || 0,
     };
+  }
+
+  function admissionFailure(code, message, status = 503) {
+    return { ok: false, code, message, status, retryable: false };
+  }
+
+  function failWaiting(modelIdKey) {
+    const queue = waitingByModelId.get(modelIdKey) || [];
+    waitingByModelId.delete(modelIdKey);
+    const failure = admissionFailure('GENERATION_QUEUE_UNAVAILABLE', '无法保存排队状态，任务未提交，请检查本机存储后重试。');
+    for (const entry of queue) {
+      waitingByNodeId.delete(entry.nodeId);
+      const task = tasks.get(entry.nodeId);
+      if (task?.attemptId === entry.attemptId && task.status === 'queued') {
+        Object.assign(task, { status: 'failed', phase: 'not-submitted', code: failure.code,
+          diagnosticCode: failure.code, error: failure.message, retryable: false, remoteMayContinue: false,
+          queuePosition: undefined, updatedAt: new Date(now()).toISOString(), finishedAt: new Date(now()).toISOString() });
+        try { persist(task); } catch { /* Never execute a waiter whose durable state is unavailable. */ }
+      }
+      entry.resolve(failure);
+    }
+  }
+
+  function updateQueuePositions(modelIdKey) {
+    const queue = waitingByModelId.get(modelIdKey) || [];
+    for (let index = 0; index < queue.length; index += 1) {
+      const task = tasks.get(queue[index].nodeId);
+      if (task?.attemptId !== queue[index].attemptId || task.status !== 'queued') continue;
+      if (task.queuePosition === index + 1) continue;
+      Object.assign(task, { queuePosition: index + 1, updatedAt: new Date(now()).toISOString() });
+      persist(task);
+    }
+  }
+
+  function scheduleDrain(modelIdKey) {
+    if (disposed || scheduledModels.has(modelIdKey)) return;
+    scheduledModels.add(modelIdKey);
+    // A terminal transition must finish persisting before another provider can start.
+    queueMicrotask(() => {
+      scheduledModels.delete(modelIdKey);
+      if (disposed) return;
+      const queue = waitingByModelId.get(modelIdKey);
+      if (!queue) return;
+      while (queue.length && !getConcurrency(modelIdKey, queue[0].params.maxConcurrent).blocked) {
+        const entry = queue.shift();
+        waitingByNodeId.delete(entry.nodeId);
+        const task = tasks.get(entry.nodeId);
+        if (task?.attemptId !== entry.attemptId || task.status !== 'queued') {
+          entry.resolve(admissionFailure('GENERATION_CANCELLED', '排队任务已停止，没有提交生成。', 499));
+          continue;
+        }
+        entry.resolve(begin(entry.params, { queuedTask: task }));
+      }
+      if (!queue.length) waitingByModelId.delete(modelIdKey);
+      try { updateQueuePositions(modelIdKey); } catch { failWaiting(modelIdKey); }
+    });
   }
 
   function release(leaseId) {
@@ -71,6 +133,7 @@ export function createGenerationCoordinator({
     if (next === 0) inFlightByModelId.delete(lease.modelIdKey);
     else inFlightByModelId.set(lease.modelIdKey, next);
     leases.delete(leaseId);
+    scheduleDrain(lease.modelIdKey);
     return true;
   }
 
@@ -141,7 +204,8 @@ export function createGenerationCoordinator({
     metadata = {},
     leaseHeartbeatMs,
     absoluteTimeoutMs,
-  }) {
+  }, { queuedTask } = {}) {
+    if (disposed) return admissionFailure('GENERATION_SERVICE_STOPPED', '生成服务已停止，任务未提交。');
     const taskId = String(nodeId || `generation-${now()}-${leaseSeed + 1}`);
     const concurrency = getConcurrency(modelIdKey, maxConcurrent);
     const previous = getTask(taskId);
@@ -149,7 +213,7 @@ export function createGenerationCoordinator({
       return { ok: false, code: 'NODE_GENERATION_UNCONFIRMED', status: 409, retryable: false,
         message: '原 Codex 生图结果尚未确认，请先核对原任务，避免重复生成。' };
     }
-    if (tasks.get(taskId)?.status === 'loading') {
+    if (tasks.get(taskId)?.status === 'loading' || (tasks.get(taskId)?.status === 'queued' && tasks.get(taskId) !== queuedTask)) {
       return {
         ok: false,
         code: 'NODE_GENERATION_ACTIVE',
@@ -157,7 +221,7 @@ export function createGenerationCoordinator({
         maxConcurrent: concurrency.maxConcurrent,
       };
     }
-    if (concurrency.blocked) {
+    if (concurrency.blocked || (!queuedTask && concurrency.queued > 0)) {
       return {
         ok: false,
         code: 'MODEL_CONCURRENCY_LIMIT',
@@ -197,6 +261,9 @@ export function createGenerationCoordinator({
       updatedAt: timestamp,
       absoluteDeadlineAt: new Date(startedAtMs + absoluteTtlMs).toISOString(),
       ...metadata,
+      phase: metadata.phase || 'loading',
+      startedAt: timestamp,
+      ...(queuedTask ? { queuedAt: queuedTask.queuedAt } : {}),
     };
     const timer = setTimer(() => expire(leaseId), Math.min(heartbeatMs, absoluteTtlMs));
 
@@ -212,7 +279,14 @@ export function createGenerationCoordinator({
     });
     tasks.set(taskId, task);
     controllers.set(taskId, controller);
-    persist(task);
+    try { persist(task); } catch {
+      release(leaseId);
+      controllers.delete(taskId);
+      Object.assign(task, { status: 'failed', phase: 'not-submitted', code: 'GENERATION_QUEUE_UNAVAILABLE',
+        retryable: false, remoteMayContinue: false, finishedAt: timestamp });
+      try { persist(task); } catch { /* The provider has not been called. */ }
+      return admissionFailure('GENERATION_QUEUE_UNAVAILABLE', '无法保存生成状态，任务未提交，请检查本机存储后重试。');
+    }
 
     return {
       ok: true,
@@ -225,6 +299,37 @@ export function createGenerationCoordinator({
       ttlMs,
       absoluteTtlMs,
     };
+  }
+
+  async function acquire(params) {
+    if (disposed) return admissionFailure('GENERATION_SERVICE_STOPPED', '生成服务已停止，任务未提交。');
+    const nodeId = String(params.nodeId || `generation-${now()}-queued-${++queueSeed}`);
+    const attemptId = String(params.attemptId || crypto.randomUUID());
+    const previous = getTask(nodeId);
+    if (previous?.providerName === 'CodexImageProvider' && previous.status === 'unknown') {
+      return admissionFailure('NODE_GENERATION_UNCONFIRMED', '原 Codex 生图结果尚未确认，请先核对原任务，避免重复生成。', 409);
+    }
+    const concurrency = getConcurrency(params.modelIdKey, params.maxConcurrent);
+    if (['loading', 'queued'].includes(tasks.get(nodeId)?.status)) {
+      return { ...admissionFailure('NODE_GENERATION_ACTIVE', '该节点已有生成或排队任务。', 409), ...concurrency };
+    }
+    const normalized = { ...params, nodeId, attemptId, maxConcurrent: concurrency.maxConcurrent };
+    if (!concurrency.blocked && concurrency.queued === 0) return begin(normalized);
+    return new Promise(resolve => {
+      const queue = waitingByModelId.get(params.modelIdKey) || [];
+      const timestamp = new Date(now()).toISOString();
+      const task = { ...params.metadata, nodeId, attemptId, kind: params.kind,
+        modelName: params.modelName, modelIdKey: params.modelIdKey, maxConcurrent: concurrency.maxConcurrent,
+        status: 'queued', phase: 'waiting-for-slot', queuePosition: queue.length + 1,
+        queuedAt: timestamp, createdAt: timestamp, updatedAt: timestamp, retryable: false, remoteMayContinue: false };
+      const entry = { nodeId, attemptId, params: normalized, resolve };
+      queue.push(entry);
+      waitingByModelId.set(params.modelIdKey, queue);
+      waitingByNodeId.set(nodeId, entry);
+      tasks.set(nodeId, task);
+      try { persist(task); } catch { failWaiting(params.modelIdKey); return; }
+      scheduleDrain(params.modelIdKey);
+    });
   }
 
   function adopt(taskRecord, {
@@ -440,10 +545,36 @@ export function createGenerationCoordinator({
     }, now(), expectedAttemptId);
   }
 
-  function cancel(nodeId) {
+  function cancel(nodeId, expectedAttemptId) {
     const task = tasks.get(nodeId);
+    if (expectedAttemptId && task?.attemptId !== expectedAttemptId) {
+      return { ok: false, code: 'GENERATION_ATTEMPT_CONFLICT', task: cloneTask(task) };
+    }
     if (!task || TERMINAL_STATUSES.has(task.status)) {
       return { ok: false, code: 'GENERATION_NOT_ACTIVE', task: cloneTask(task) };
+    }
+    if (task.status === 'queued') {
+      const entry = waitingByNodeId.get(nodeId);
+      if (!entry || entry.attemptId !== task.attemptId) return { ok: false, code: 'GENERATION_NOT_ACTIVE', task: cloneTask(task) };
+      const queue = waitingByModelId.get(task.modelIdKey) || [];
+      const index = queue.indexOf(entry);
+      if (index >= 0) queue.splice(index, 1);
+      if (!queue.length) waitingByModelId.delete(task.modelIdKey);
+      waitingByNodeId.delete(nodeId);
+      let cancelled;
+      try {
+        cancelled = transition(nodeId, 'cancelled', { phase: 'not-submitted', queuePosition: undefined,
+          code: 'GENERATION_CANCELLED', error: '排队已取消，没有提交生成。', retryable: false,
+          remoteMayContinue: false }, now(), entry.attemptId);
+      } catch {
+        // It is already removed from the executable queue; restart also rejects waiters.
+        cancelled = cloneTask(task);
+      } finally {
+        entry.resolve(admissionFailure('GENERATION_CANCELLED', '排队已取消，没有提交生成。', 499));
+        try { updateQueuePositions(task.modelIdKey); } catch { failWaiting(task.modelIdKey); }
+        scheduleDrain(task.modelIdKey);
+      }
+      return { ok: true, task: cancelled };
     }
     if (task.providerName === 'CodexImageProvider' && (task.remoteSubmissionStarted || task.remoteTasks?.length)) {
       const controller = controllers.get(nodeId);
@@ -555,6 +686,21 @@ export function createGenerationCoordinator({
   }
 
   function dispose() {
+    disposed = true;
+    for (const entry of waitingByNodeId.values()) {
+      const task = tasks.get(entry.nodeId);
+      if (task?.attemptId === entry.attemptId && task.status === 'queued') {
+        Object.assign(task, { status: 'failed', phase: 'not-submitted', queuePosition: undefined,
+          code: 'GENERATION_NOT_SUBMITTED', diagnosticCode: 'GENERATION_NOT_SUBMITTED',
+          error: '生成服务已停止，排队任务没有提交，请重新生成。', retryable: false,
+          remoteMayContinue: false, updatedAt: new Date(now()).toISOString(), finishedAt: new Date(now()).toISOString() });
+        try { persist(task); } catch { /* Restart recovery also terminates persisted waiters. */ }
+      }
+      entry.resolve(admissionFailure('GENERATION_NOT_SUBMITTED', '生成服务已停止，排队任务没有提交。'));
+    }
+    waitingByNodeId.clear();
+    waitingByModelId.clear();
+    scheduledModels.clear();
     for (const lease of leases.values()) clearTimer(lease.timer);
     leases.clear();
     inFlightByModelId.clear();
@@ -562,6 +708,7 @@ export function createGenerationCoordinator({
   }
 
   return {
+    acquire,
     adopt,
     begin,
     cancel,
