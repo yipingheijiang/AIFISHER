@@ -5,7 +5,8 @@ import sqlite3 from 'sqlite3';
 import { BASE_LIBRARY_DIR } from '../workspace/workspacePaths.js';
 
 const sqlite = sqlite3.verbose();
-export const SQLITE_WORKFLOW_SCHEMA_VERSION = 4;
+export const SQLITE_WORKFLOW_SCHEMA_VERSION = 5;
+const LEGACY_JSON_MIGRATION = 'legacy-projects-and-folders-json';
 
 function safeParseJson(text, fallback) {
     try {
@@ -63,10 +64,9 @@ export class SQLiteWorkflowStore {
 
             await this.applySchemaMigrations();
 
-            // 启动时自动迁移旧版项目 JSON，保证升级后可直接读取历史项目
-            await this.migrateFromLegacyJsonIfNeeded();
-            // 启动时自动迁移旧版 folders.json
-            await this.migrateFoldersFromJsonIfNeeded();
+            // Only the initial migration may import old JSON. Empty tables after
+            // deletion must remain empty even while recovery snapshots survive.
+            await this.migrateLegacyJsonOnce();
             // 启动时先隔离损坏记录；有有效恢复点时自动恢复为更高 revision。
             await this.recoverCorruptedWorkflows({ skipInit: true });
             // 启动后统一重建一次文件夹项目计数，避免历史脏数据
@@ -138,6 +138,7 @@ export class SQLiteWorkflowStore {
 
     async applySchemaMigrations() {
         let currentVersion = await this.getSchemaVersion({ skipInit: true });
+        const previousSchemaVersion = currentVersion;
         if (currentVersion > SQLITE_WORKFLOW_SCHEMA_VERSION) {
             const error = new Error(
                 `DATABASE_SCHEMA_TOO_NEW:${currentVersion}>${SQLITE_WORKFLOW_SCHEMA_VERSION}`
@@ -148,23 +149,24 @@ export class SQLiteWorkflowStore {
 
         if (currentVersion < SQLITE_WORKFLOW_SCHEMA_VERSION) {
             await this.createMigrationBackup(currentVersion);
-        }
-
-        while (currentVersion < SQLITE_WORKFLOW_SCHEMA_VERSION) {
-            const targetVersion = currentVersion + 1;
             await this.run(`BEGIN IMMEDIATE`);
             try {
-                await this.applySchemaMigration(targetVersion);
-                await this.run(`PRAGMA user_version = ${targetVersion}`);
+                // Commit the whole upgrade together: a failed first initialization
+                // must not leave a v4 database that looks previously imported.
+                while (currentVersion < SQLITE_WORKFLOW_SCHEMA_VERSION) {
+                    const targetVersion = currentVersion + 1;
+                    await this.applySchemaMigration(targetVersion, { previousSchemaVersion });
+                    await this.run(`PRAGMA user_version = ${targetVersion}`);
+                    currentVersion = targetVersion;
+                }
                 await this.run(`COMMIT`);
-                currentVersion = targetVersion;
             } catch (error) {
                 try {
                     await this.run(`ROLLBACK`);
                 } catch (rollbackError) {
                     error.rollbackError = rollbackError;
                 }
-                error.schemaMigrationTarget = targetVersion;
+                error.schemaMigrationTarget = currentVersion + 1;
                 throw error;
             }
         }
@@ -174,7 +176,7 @@ export class SQLiteWorkflowStore {
         await this.ensureFolderSchema();
     }
 
-    async applySchemaMigration(version) {
+    async applySchemaMigration(version, { previousSchemaVersion = 0 } = {}) {
         if (version === 1) {
             await this.run(`
                 CREATE TABLE IF NOT EXISTS workflows (
@@ -250,6 +252,20 @@ export class SQLiteWorkflowStore {
                       AND TRIM(data_json) NOT IN ('', '{}')
                       AND (payload_json IS NULL OR TRIM(payload_json) IN ('', '{}'))
                 `);
+            }
+            return;
+        }
+
+        if (version === 5) {
+            await this.run(`
+                CREATE TABLE IF NOT EXISTS workflow_store_migrations (
+                    name TEXT PRIMARY KEY
+                )
+            `);
+            // Existing v4 databases already ran the startup JSON import. Their
+            // empty state can be intentional; do not resurrect deleted content.
+            if (previousSchemaVersion >= 4) {
+                await this.run(`INSERT OR IGNORE INTO workflow_store_migrations (name) VALUES (?)`, [LEGACY_JSON_MIGRATION]);
             }
             return;
         }
@@ -858,7 +874,26 @@ export class SQLiteWorkflowStore {
         }
     }
 
-    // 仅在工作流表为空时执行一次迁移，避免重复导入
+    async migrateLegacyJsonOnce() {
+        const completed = await this.get(`SELECT name FROM workflow_store_migrations WHERE name = ?`, [LEGACY_JSON_MIGRATION]);
+        if (completed) return;
+        await this.run(`BEGIN IMMEDIATE`);
+        try {
+            await this.migrateFromLegacyJsonIfNeeded();
+            await this.migrateFoldersFromJsonIfNeeded();
+            await this.run(`INSERT OR IGNORE INTO workflow_store_migrations (name) VALUES (?)`, [LEGACY_JSON_MIGRATION]);
+            await this.run(`COMMIT`);
+        } catch (error) {
+            try {
+                await this.run(`ROLLBACK`);
+            } catch (rollbackError) {
+                error.rollbackError = rollbackError;
+            }
+            throw error;
+        }
+    }
+
+    // Called only during the first legacy JSON import for this database.
     async migrateFromLegacyJsonIfNeeded() {
         const countRow = await this.get(`SELECT COUNT(1) AS c FROM workflows`);
         const existingCount = Number(countRow?.c || 0);
@@ -885,6 +920,7 @@ export class SQLiteWorkflowStore {
                 imported += 1;
             } catch (error) {
                 console.warn(`[WorkflowStore] 迁移旧项目失败: ${file}`, error?.message || error);
+                throw error;
             }
         }
 

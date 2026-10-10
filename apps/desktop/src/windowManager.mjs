@@ -95,12 +95,21 @@ export function createMainWindow({
   const view = new WebContentsView({ webPreferences: webPreferences(preload) });
   view.setBackgroundColor(LAUNCHER_SURFACE);
   window.contentView.addChildView(view);
+  // BrowserWindow.webContents itself throws after native window destruction.
+  // Keep the references while alive, including for destruction-time cleanup.
+  const hostContents = window.webContents;
+  const contents = view.webContents;
+  let disposed = false;
+  const isAlive = () => !disposed && !window.isDestroyed()
+    && !hostContents.isDestroyed() && !contents.isDestroyed();
   let canvasChrome = false;
   const applyTitleStrip = () => {
-    void window.webContents.executeJavaScript(`document.querySelector('.title-strip')?.style.setProperty('display', '${canvasChrome ? 'none' : 'block'}')`).catch(() => {});
+    if (!isAlive()) return;
+    void hostContents.executeJavaScript(`document.querySelector('.title-strip')?.style.setProperty('display', '${canvasChrome ? 'none' : 'block'}')`).catch(() => {});
   };
-  window.webContents.on('dom-ready', applyTitleStrip);
+  hostContents.on('dom-ready', applyTitleStrip);
   const layout = () => {
+    if (!isAlive()) return;
     const { width, height } = window.getContentBounds();
     view.setBounds({
       x: 0,
@@ -116,6 +125,7 @@ export function createMainWindow({
   let currentTheme = 'dark';
   let navigating = false;
   const updateChrome = (url) => {
+    if (!isAlive()) return;
     const changed = canvasChrome !== isCanvasUrl(url);
     canvasChrome = isCanvasUrl(url);
     if (changed) applyTitleStrip();
@@ -124,6 +134,7 @@ export function createMainWindow({
   };
   if (nativeTheme) nativeTheme.themeSource = 'dark';
   const paint = (color, theme = 'dark') => {
+    if (!isAlive()) return;
     if (nativeTheme) nativeTheme.themeSource = theme;
     if (color === surface && theme === currentTheme) return;
     surface = color;
@@ -136,50 +147,79 @@ export function createMainWindow({
     });
     view.setBackgroundColor(color);
     const script = `document.documentElement.style.background = document.body.style.background = ${JSON.stringify(color)}; document.documentElement.style.colorScheme = ${JSON.stringify(theme)}`;
-    void window.webContents.executeJavaScript(script).catch(() => {});
+    void hostContents.executeJavaScript(script).catch(() => {});
   };
-  view.webContents.on('did-start-navigation', ({ url, isSameDocument, isMainFrame }) => {
-    if (!isMainFrame || isSameDocument || !isAppUrl(url)) return;
+  const onNavigationStart = ({ url, isSameDocument, isMainFrame }) => {
+    if (!isAlive() || !isMainFrame || isSameDocument || !isAppUrl(url)) return;
     // Never carry the previous account's appearance through a full page navigation. The new
     // canvas applies its own account preference after hydration; login remains dark.
     navigating = true;
     updateChrome(url);
     paint(surfaceColorFor(url));
-  });
-  view.webContents.on('did-navigate', (_event, url) => {
+  };
+  const onNavigate = (_event, url) => {
+    if (!isAlive()) return;
     navigating = false;
     updateChrome(url);
     paint(surfaceColorFor(url));
-  });
+  };
+  contents.on('did-start-navigation', onNavigationStart);
+  contents.on('did-navigate', onNavigate);
   if (ipcMain) {
     ipcMain.handle('desktop:set-theme', (event, theme) => {
       if (
-        event.sender !== view.webContents ||
-        event.senderFrame !== view.webContents.mainFrame ||
+        !isAlive() ||
+        event.sender !== contents ||
+        event.senderFrame !== contents.mainFrame ||
         navigating ||
         !isCanvasUrl(event.senderFrame?.url) ||
-        !isCanvasUrl(view.webContents.getURL())
+        !isCanvasUrl(contents.getURL())
       ) {
         throw new Error('UNTRUSTED_SENDER');
       }
       if (theme !== 'dark' && theme !== 'light') throw new Error('INVALID_THEME');
       paint(surfaceColorFor(CANVAS_URL, theme), theme);
     });
-    window.once('closed', () => ipcMain.removeHandler('desktop:set-theme'));
   }
 
   // Clicking the strip focuses the window; typing still belongs to the page.
-  window.on('focus', () => view.webContents.focus());
-  window.once('ready-to-show', () => {
+  const onFocus = () => {
+    if (isAlive()) contents.focus();
+  };
+  const onReady = () => {
+    if (!isAlive()) return;
     window.maximize();
     window.show();
-  });
+  };
+  window.on('focus', onFocus);
+  window.once('ready-to-show', onReady);
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    window.off('resize', layout);
+    window.off('focus', onFocus);
+    window.off('ready-to-show', onReady);
+    window.off('closed', dispose);
+    hostContents.off('dom-ready', applyTitleStrip);
+    hostContents.off('destroyed', dispose);
+    contents.off('did-start-navigation', onNavigationStart);
+    contents.off('did-navigate', onNavigate);
+    contents.off('destroyed', dispose);
+    ipcMain?.removeHandler('desktop:set-theme');
+  };
+  // A cancelled close only hides to the tray. Dispose on actual destruction,
+  // and still guard captured callbacks that can arrive after listener removal.
+  window.once('closed', dispose);
+  hostContents.once('destroyed', dispose);
+  contents.once('destroyed', dispose);
   // The strip never navigates: a file dropped on it would otherwise replace it with file://.
-  window.webContents.on('will-navigate', (event) => event.preventDefault());
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  void window.loadURL(TITLE_STRIP_URL);
-  guardNavigation(view.webContents, { shell, preload, icon });
-  return { window, contents: view.webContents };
+  hostContents.on('will-navigate', (event) => event.preventDefault());
+  hostContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  void window.loadURL(TITLE_STRIP_URL).catch(error => {
+    if (isAlive() && error.code !== 'ERR_ABORTED') console.error('AIFISHER title strip failed to load', error);
+  });
+  guardNavigation(contents, { shell, preload, icon });
+  return { window, contents };
 }
 
 function guardNavigation(contents, { shell, preload, icon }) {

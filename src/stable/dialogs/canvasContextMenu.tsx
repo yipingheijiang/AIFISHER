@@ -60,9 +60,31 @@ export function CanvasContextMenu(
 ) {
   const { state, onClose } = props;
   const menuRef = React.useRef<HTMLDivElement>(null),
+    submenuRef = React.useRef<HTMLDivElement>(null),
+    addRef = React.useRef<HTMLButtonElement>(null),
     fileRef = React.useRef<HTMLInputElement>(null);
   const [mode, setMode] = React.useState<'main' | 'add-nodes'>('main');
   const [position, setPosition] = React.useState({ x: state.x, y: state.y });
+  const [submenuPosition, setSubmenuPosition] = React.useState({ x: state.x, y: state.y });
+  const closeTimer = React.useRef<number | undefined>(undefined);
+  const focusSubmenu = React.useRef(false);
+  const cancelSubmenuClose = () => {
+    if (closeTimer.current !== undefined) window.clearTimeout(closeTimer.current);
+    closeTimer.current = undefined;
+  };
+  const openSubmenu = (focus = false) => {
+    cancelSubmenuClose();
+    if (focus && submenuRef.current) {
+      submenuRef.current.querySelector<HTMLButtonElement>('button[role="menuitem"]')?.focus();
+    } else focusSubmenu.current = focus;
+    setMode('add-nodes');
+  };
+  const closeSubmenu = () => {
+    cancelSubmenuClose();
+    focusSubmenu.current = false;
+    if (submenuRef.current?.contains(document.activeElement)) addRef.current?.focus();
+    setMode('main');
+  };
   React.useEffect(() => {
     if (!state.isOpen) return;
     const outside = (event: MouseEvent) => {
@@ -72,7 +94,10 @@ export function CanvasContextMenu(
     return () => document.removeEventListener('mousedown', outside);
   }, [state.isOpen, onClose]);
   React.useEffect(() => {
-    if (state.isOpen) setMode('main');
+    cancelSubmenuClose();
+    focusSubmenu.current = false;
+    setMode('main');
+    return cancelSubmenuClose;
   }, [state.isOpen, state.type, state.x, state.y]);
   React.useLayoutEffect(() => {
     if (!state.isOpen || !menuRef.current) return;
@@ -93,7 +118,32 @@ export function CanvasContextMenu(
     menuRef.current.focus();
     window.addEventListener('resize', place);
     return () => window.removeEventListener('resize', place);
-  }, [state.isOpen, state.x, state.y, state.type, mode]);
+  }, [state.isOpen, state.x, state.y, state.type]);
+  React.useLayoutEffect(() => {
+    if (!state.isOpen || state.type !== 'global' || mode !== 'add-nodes') return;
+    const place = () => {
+      const main = menuRef.current?.getBoundingClientRect(),
+        row = addRef.current?.getBoundingClientRect(),
+        submenu = submenuRef.current?.getBoundingClientRect();
+      if (!main || !row || !submenu) return;
+      const margin = 12;
+      const right = main.right - 1;
+      const x = right + submenu.width + margin <= window.innerWidth
+        ? right
+        : main.left - submenu.width + 1;
+      setSubmenuPosition({
+        x: Math.max(margin, Math.min(x, window.innerWidth - submenu.width - margin)),
+        y: Math.max(margin, Math.min(row.top, window.innerHeight - submenu.height - margin)),
+      });
+    };
+    place();
+    if (focusSubmenu.current) {
+      submenuRef.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]')?.focus();
+      focusSubmenu.current = false;
+    }
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [state.isOpen, state.type, mode, position.x, position.y]);
   if (!state.isOpen) return null;
   const finish = (action: (() => void) | undefined) => () => {
     if (action) {
@@ -106,9 +156,17 @@ export function CanvasContextMenu(
     return (
       <button
         key={entry.label}
+        ref={entry.next ? addRef : undefined}
         role="menuitem"
+        aria-haspopup={entry.next ? 'menu' : undefined}
+        aria-expanded={entry.next ? mode === 'add-nodes' : undefined}
         disabled={entry.disabled}
         onClick={entry.action}
+        onMouseEnter={() => {
+          cancelSubmenuClose();
+          if (entry.next) openSubmenu();
+          else if (state.type === 'global' && !large) closeSubmenu();
+        }}
         className={`group flex items-center gap-3 w-full p-2 rounded-lg text-left transition-colors ${entry.disabled ? 'opacity-30' : 'text-[var(--af-text-secondary)] hover:bg-[var(--af-surface-raised)] hover:text-[var(--af-text)]'}`}
       >
         <span
@@ -148,8 +206,25 @@ export function CanvasContextMenu(
     ? item({ label: '创建 SKILL', icon: 'skill', action: finish(props.onCreateWorkflow) })
     : null;
   const nodeOptions = state.type === 'node-options';
-  const global = state.type === 'global' && mode === 'main';
+  const global = state.type === 'global';
   const connector = state.type === 'node-connector';
+  const nodeItems = (
+    <>
+      {[
+        { label: connector ? '生成文本' : '文本', icon: 'text' as const, description: connector ? '脚本、文案、品牌文本' : undefined, action: () => props.onSelectType('Text') },
+        { label: connector ? '生成图像' : '图像生成', icon: 'image' as const, description: connector ? '写实、插画、3D、动漫' : undefined, action: () => props.onSelectType('Image') },
+        { label: connector ? '生成视频' : '视频生成', icon: 'video' as const, description: connector ? '文生视频、图生视频' : undefined, action: () => props.onSelectType('Video') },
+        { label: connector ? '生成音乐' : '音频生成', icon: 'audio' as const, description: connector ? '歌词音乐、背景音乐、音效' : undefined, action: () => props.onSelectType('Audio') },
+        { label: 'ComfyUI 工作流', icon: 'workflow' as const, action: () => {
+          onClose();
+          window.dispatchEvent(new CustomEvent('fisherai:open-workflow-library'));
+        } },
+      ].map(entry => item(entry, true))}
+      {separator('compare')}
+      {item({ label: '图片对比', icon: 'compare', action: () => props.onSelectType('Image Compare') }, true)}
+      {item({ label: '图片拼合', icon: 'composite', action: () => props.onSelectType('Image Composite') }, true)}
+    </>
+  );
   const keyDown = (event: ReactTypes.KeyboardEvent) => {
     event.stopPropagation();
     if (event.key === 'Tab') {
@@ -158,17 +233,33 @@ export function CanvasContextMenu(
     }
     if (event.key === 'Escape') {
       event.preventDefault();
-      if (state.type === 'global' && mode === 'add-nodes') setMode('main');
+      if (global && mode === 'add-nodes') {
+        closeSubmenu();
+        addRef.current?.focus();
+      }
       else onClose();
+      return;
+    }
+    if (global && event.key === 'ArrowRight' && document.activeElement === addRef.current) {
+      event.preventDefault();
+      openSubmenu(true);
+      return;
+    }
+    if (global && event.key === 'ArrowLeft' && submenuRef.current?.contains(document.activeElement)) {
+      event.preventDefault();
+      closeSubmenu();
+      addRef.current?.focus();
       return;
     }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
+    const activeMenu = submenuRef.current?.contains(document.activeElement)
+      ? submenuRef.current : menuRef.current;
     const buttons = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>(
+      activeMenu?.querySelectorAll<HTMLButtonElement>(
         'button[role="menuitem"]:not(:disabled)',
       ) || [],
-    );
+    ).filter(button => button.closest('[role="menu"]') === activeMenu);
     const index = buttons.findIndex((button) => button === document.activeElement);
     const next =
       event.key === 'Home'
@@ -197,6 +288,15 @@ export function CanvasContextMenu(
           onClose();
       }}
       onPointerDown={(event) => event.stopPropagation()}
+      onMouseEnter={cancelSubmenuClose}
+      onMouseLeave={() => {
+        if (!global || mode !== 'add-nodes') return;
+        cancelSubmenuClose();
+        closeTimer.current = window.setTimeout(() => {
+          closeTimer.current = undefined;
+          closeSubmenu();
+        }, 150);
+      }}
       style={{
         position: 'fixed',
         left: position.x,
@@ -270,7 +370,7 @@ export function CanvasContextMenu(
               label: '添加节点',
               icon: 'add',
               next: true,
-              action: () => setMode('add-nodes'),
+              action: () => openSubmenu(true),
             })}
             {separator('undo')}
             {item({
@@ -295,75 +395,27 @@ export function CanvasContextMenu(
               action: finish(props.onPaste),
             })}
           </>
-        ) : (
-          <>
-            {item(
-              {
-                label: connector ? '生成文本' : '文本',
-                icon: 'text',
-                description: connector ? '脚本、文案、品牌文本' : undefined,
-                action: () => props.onSelectType('Text'),
-              },
-              true,
-            )}
-            {item(
-              {
-                label: connector ? '生成图像' : '图像生成',
-                icon: 'image',
-                description: connector ? '写实、插画、3D、动漫' : undefined,
-                action: () => props.onSelectType('Image'),
-              },
-              true,
-            )}
-            {item(
-              {
-                label: connector ? '生成视频' : '视频生成',
-                icon: 'video',
-                description: connector ? '文生视频、图生视频' : undefined,
-                action: () => props.onSelectType('Video'),
-              },
-              true,
-            )}
-            {item(
-              {
-                label: connector ? '生成音乐' : '音频生成',
-                icon: 'audio',
-                description: connector ? '歌词音乐、背景音乐、音效' : undefined,
-                action: () => props.onSelectType('Audio'),
-              },
-              true,
-            )}
-            {item(
-              {
-                label: 'ComfyUI 工作流',
-                icon: 'workflow',
-                action: () => {
-                  onClose();
-                  window.dispatchEvent(new CustomEvent('fisherai:open-workflow-library'));
-                },
-              },
-              true,
-            )}
-            {separator('compare')}
-            {item(
-              {
-                label: '图片对比',
-                icon: 'compare',
-                action: () => props.onSelectType('Image Compare'),
-              },
-              true,
-            )}
-            {item(
-              {
-                label: '图片拼合',
-                icon: 'composite',
-                action: () => props.onSelectType('Image Composite'),
-              },
-              true,
-            )}
-          </>
-        )}
+        ) : nodeItems}
       </div>
+      {global && mode === 'add-nodes' && (
+        <div
+          ref={submenuRef}
+          role="menu"
+          aria-label="节点类型"
+          onMouseEnter={cancelSubmenuClose}
+          style={{
+            position: 'fixed', left: submenuPosition.x, top: submenuPosition.y,
+            width: 'min(224px, calc(100vw - 24px))', maxHeight: 'calc(100vh - 24px)',
+            zIndex: 1001, overflowY: 'auto', padding: 8,
+            backgroundColor: 'var(--af-surface-raised)', color: 'var(--af-text-secondary)',
+            border: '1px solid var(--af-border)', borderRadius: 8,
+            boxShadow: '0 10px 15px -3px rgba(0,0,0,.4), 0 4px 6px -2px rgba(0,0,0,.2)',
+          }}
+          className="flex flex-col gap-1"
+        >
+          {nodeItems}
+        </div>
+      )}
     </div>
   );
 }
