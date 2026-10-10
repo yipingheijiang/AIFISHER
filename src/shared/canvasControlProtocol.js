@@ -159,14 +159,16 @@ export const canvasControlTool = {
     // validCanvasControl still enforces the exact fields for each operation.
     operations: { type: 'array', minItems: 1, maxItems: 100, items: {
       type: 'object', additionalProperties: false, required: ['kind'],
-      description: 'Use only fields for the selected kind. create: ref,type,x,y,title?,prompt?; update: nodeId,patch; configure: nodeId,model,parameters; delete: nodeId; connect: sourceId,targetId,sourcePort?; disconnect: sourceId,targetId,targetPort?; group: ref,nodeIds,label; ungroup: groupId; renameGroup: groupId,label; arrange: nodeIds,columns; duplicate: nodes,x,y. edit requires the latest read revision.',
+      description: 'Use only fields for the selected kind. create: ref,type,x,y,title?,prompt?; update: nodeId,patch; configure: nodeId,model,parameters; delete: nodeId; connect: sourceId,targetId,sourcePort? (default 0, a numeric SOURCE output index; never targetPort). Ordinary image/text connections should omit port fields. Workflow targets automatically use the first compatible empty input slot, so connect references in Picture order and read back parentIds to verify. disconnect: sourceId,targetId,targetPort? (a numeric TARGET input index); group: ref,nodeIds,label; ungroup: groupId; renameGroup: groupId,label; arrange: nodeIds,columns; duplicate: nodes,x,y. edit requires the latest read revision.',
       properties: {
         kind: { enum: ['create', 'update', 'configure', 'delete', 'connect', 'disconnect', 'group', 'ungroup', 'renameGroup', 'arrange', 'duplicate'] },
         ref: string, type: { enum: ['Image', 'Video', 'Audio', 'Text'] }, ...fields,
         nodeId: string, model: string,
         parameters: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } },
         patch: { type: 'object', additionalProperties: false, properties: fields },
-        sourceId: string, targetId: string, sourcePort: portSchema, targetPort: portSchema,
+        sourceId: string, targetId: string,
+        sourcePort: { ...portSchema, description: 'connect only: numeric source output index, default 0. Omit for ordinary image/text sources. This does not select the target input slot.' },
+        targetPort: { ...portSchema, description: 'disconnect only: numeric target input slot to remove. Never include in connect; compatible empty slots are allocated automatically.' },
         nodeIds, label: string, groupId: string,
         columns: { type: 'integer', minimum: 1, maximum: 100 },
         nodes: { type: 'array', minItems: 1, maxItems: 100, items: { type: 'object', additionalProperties: false, required: ['nodeId', 'ref'], properties: { nodeId: string, ref: string } } },
