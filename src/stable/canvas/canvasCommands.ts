@@ -8,6 +8,7 @@ import {
   type CanvasClipboardNode,
   type CanvasClipboardViewport,
 } from './canvasClipboard';
+import { canvasClipboardImageSource, copyCanvasImageToClipboard } from '../media/imageClipboard';
 
 type ReactHooks = Pick<typeof React, 'useRef' | 'useCallback' | 'useEffect'>;
 type SetNodes = React.Dispatch<React.SetStateAction<CanvasClipboardNode[]>>;
@@ -111,6 +112,10 @@ export function useCanvasCommands(
         return;
       }
       clipboard.current = snapshot(selected);
+      const image = canvasClipboardImageSource(selected);
+      if (image) void copyCanvasImageToClipboard(image).catch(error => {
+        window.alert(`节点已复制，但图片未写入系统剪贴板：${error instanceof Error ? error.message : '请重试。'}`);
+      });
     }
   }, [nodes, selectedNodeIds]);
   const handlePaste = hooks.useCallback(() => insertCopy(clipboard.current, true), [insertCopy]);
@@ -120,6 +125,7 @@ export function useCanvasCommands(
     const onKeyDown = (event: KeyboardEvent) => {
       if (
         event.isComposing ||
+        event.keyCode === 229 ||
         isTextEditor(document.activeElement) ||
         (event.target instanceof Element && isTextEditor(event.target))
       )
@@ -141,6 +147,8 @@ export function useCanvasCommands(
         return;
       }
       if (event.ctrlKey && key === 'c') {
+        if (selectedNodeIds.length) event.preventDefault();
+        if (event.repeat) return;
         handleCopy();
         return;
       }

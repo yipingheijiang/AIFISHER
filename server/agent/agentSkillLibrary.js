@@ -283,7 +283,7 @@ export function createAgentSkillLibrary({ libraryDirectory, officialRegistry = c
         instructions = skill.source === 'official'
           ? await officialRegistry.readInstructions(slug, context)
           : await readSkillInstructionFiles(path.join(rootDirectory,
-            legacyAliases.get(slug) || slug));
+            legacyAliases.get(slug) || slug), context);
       } catch (error) {
         throw new AgentSkillError(error.message);
       }

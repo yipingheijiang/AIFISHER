@@ -4,10 +4,13 @@ import { checkOutbound } from '../../../server/security/installOutboundPolicy.js
 import {
   app,
   BrowserWindow,
+  clipboard,
+  ClipboardItem,
   dialog,
   ipcMain,
   Menu,
   nativeTheme,
+  nativeImage,
   session,
   protocol,
   safeStorage,
@@ -34,6 +37,7 @@ import {
   isExternalUrl,
 } from './windowManager.mjs';
 import { chooseLocalWorkspace, createLocalWorkspace } from './localWorkspace.mjs';
+import { writeClipboardImage } from './imageClipboard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const installation = resolveInstallation({
@@ -201,6 +205,14 @@ function registerIpc() {
     return workspaceSwitch;
   });
   handle('desktop:show-item-in-folder', (target) => shell.showItemInFolder(target));
+  let clipboardWrite = Promise.resolve();
+  ipcMain.handle('desktop:copy-image', (event, bytes) => {
+    if (!appContents || event.sender !== appContents || event.senderFrame !== appContents.mainFrame || senderPath(event) !== '/')
+      throw new Error('UNTRUSTED_SENDER');
+    const write = clipboardWrite.catch(() => {}).then(() => writeClipboardImage(bytes, { clipboard, ClipboardItem, nativeImage }));
+    clipboardWrite = write;
+    return write;
+  });
 }
 
 async function start() {

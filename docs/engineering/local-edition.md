@@ -12,7 +12,7 @@ Automatic drama/fight recipes that require the retired scene provider are disabl
 
 Validated on Windows x64 with Node.js 24.20.0 and Electron 44.3.0:
 
-- `npm run check`: type checking, regression tests, model catalog generation, canvas build, and launcher build passed. The latest unit suite contains 62 passing tests after node-level queue cancellation and Ctrl+Enter keyboard integration.
+- `npm run check`: type checking, regression tests, model catalog generation, canvas build, and launcher build passed. The latest unit suite contains 101 passing tests, including native image clipboard, node-level queue cancellation and Ctrl+Enter keyboard integration.
 - Actual Electron testing covered the dashboard, five settings sections, canvas, save/restart persistence, workspace switching and return, video import, trimming, and frame extraction.
 - Application HTTP/HTTPS/WS/WSS public requests were refused during the core test. Core flows produced zero requests to the retired operator and zero public network attempts; separate intentional Electron main/renderer probes were blocked. This was application boundary observation, not packet capture.
 - Existing files and database records were compared with a pre-change backup and preserved. Test projects, media, and temporary workspaces were removed.
@@ -52,6 +52,14 @@ When a model reaches its configured concurrency limit, the canvas still accepts 
 In image, video, audio and text generation prompt fields, Ctrl+Enter submits through the same action as the generate button. Enter restores normal paragraph editing, and Shift+Enter inserts a hard line break. Chinese input method confirmation and active reference/preset menus take priority, and held Ctrl+Enter cannot submit repeated tasks. Ordinary text-node content retains its editing behavior.
 
 The queue is scheduled by the current local service. Restarting the service ends tasks that were still waiting with a clear not-submitted result; users can submit them again manually. It does not automatically replay waiting or unconfirmed provider requests. Mock-provider execution and actual Electron canvas checks verified admission order, queue cancellation, automatic start, prompt keys and saved results without using image-generation quota or changing provider credentials.
+
+## Copy canvas images to other apps
+
+Select one completed image-generation or uploaded-image node and press Ctrl+C, or use its existing context-menu Copy action. This keeps the canvas node copy and also places the original-size image on the system clipboard. In Codex, focus the message input and press Ctrl+V to attach the image. Canvas Ctrl+V continues to duplicate the copied node and its connections. Multiple-node copies retain the internal node-copy behavior.
+
+The image preview also provides 复制图片, with copying, success and failure feedback. Historical images have their own copy buttons; copying a historical image does not replace the node's main result. PNG pixels and transparency are preserved, and JPEG/WebP images are converted to PNG at their original dimensions. Copies are limited to 32 MB and 40 million pixels; a newer copy supersedes an older pending read. Text-field copying and input-method composition keep their normal behavior.
+
+The desktop bridge accepts bounded PNG bytes from the current canvas main frame only. It grants no path or clipboard-read access. Native Electron clipboard writing and the renderer ClipboardItem fallback are separate capabilities. Actual Windows Electron checks verified full-size and transparent pixels, image buttons, history, text copying and internal node paste; an actual Codex input accepted the copied image as a draft attachment without sending it.
 
 ## Running and updating
 

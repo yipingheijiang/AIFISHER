@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('aifisherDesktop', {
   },
   switchWorkspace: () => invoke('desktop:switch-workspace'),
   showItemInFolder: (target) => invoke('desktop:show-item-in-folder', String(target)),
+  copyImage: (bytes) => invoke('desktop:copy-image', bytes),
   pathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file) || '';

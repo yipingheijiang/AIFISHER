@@ -6,6 +6,8 @@ export interface AifisherDesktopBridge {
   setTheme?(theme: 'dark' | 'light'): Promise<void>;
   switchWorkspace?(): Promise<void>;
   showItemInFolder(path: string): Promise<void>;
+  /** Writes PNG pixels to the system clipboard, without granting filesystem access. */
+  copyImage?(bytes: Uint8Array): Promise<void>;
   pathForFile(file: File): string; // 没有本机路径时返回 ''
   onBackendState(listener: (state: 'ready' | 'reconnecting') => void): () => void;
 }

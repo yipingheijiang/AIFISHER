@@ -3,6 +3,13 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { RUNTIME_PATHS } from '../../workspace/runtimePaths.js';
 import { OFFICIAL_PRODUCTION_PROFILES, productionProfileForBundle } from '../../../src/shared/officialProductionProfiles.js';
+import {
+  parseSkillInstructionConfiguration,
+  parseSkillInstructionManifest as parseInstructionManifest,
+  selectSkillInstructionReferences,
+} from '../skillInstructionRoutes.js';
+
+export { parseSkillInstructionConfiguration, selectSkillInstructionReferences } from '../skillInstructionRoutes.js';
 
 function deepFreeze(value) {
   Object.values(value).forEach((child) => {
@@ -102,28 +109,7 @@ function instructionError(message) {
 }
 
 export function parseSkillInstructionManifest(text) {
-  if (text === undefined || text === null) return [];
-  if (Buffer.byteLength(text, 'utf8') > SKILL_INSTRUCTION_LIMITS.manifestBytes) {
-    throw instructionError('SKILL 参考清单超过大小限制');
-  }
-  let manifest;
-  try { manifest = JSON.parse(text); } catch { throw instructionError('SKILL 参考清单不是有效 JSON'); }
-  const references = manifest?.instructionReferences;
-  if (!Array.isArray(references) || references.length > SKILL_INSTRUCTION_LIMITS.referenceCount) {
-    throw instructionError('SKILL 参考清单必须显式声明文本文件');
-  }
-  for (const reference of references) {
-    if (
-      typeof reference !== 'string' || reference.length > 240 ||
-      !/^references\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.(?:md|txt)$/.test(reference)
-    ) {
-      throw instructionError('SKILL 只允许 references/ 内明确声明的 Markdown 或文本参考');
-    }
-  }
-  if (new Set(references.map((reference) => reference.toLowerCase())).size !== references.length) {
-    throw instructionError('SKILL 参考清单不能包含重复文件');
-  }
-  return references;
+  return parseInstructionManifest(text, SKILL_INSTRUCTION_LIMITS);
 }
 
 async function readBoundedFile(directory, relative, limit, { optional = false } = {}) {
@@ -184,12 +170,13 @@ async function readBoundedFile(directory, relative, limit, { optional = false } 
 }
 
 // No recursive discovery, Markdown-link following, shell evaluation, or script execution.
-export async function readSkillInstructionFiles(directory) {
+export async function readSkillInstructionFiles(directory, context) {
   const limits = SKILL_INSTRUCTION_LIMITS;
   const root = await readBoundedFile(directory, 'SKILL.md', limits.rootBytes);
   if (!root.trim()) throw instructionError('SKILL.md 不能为空');
   const manifest = await readBoundedFile(directory, 'agent-skill.json', limits.manifestBytes, { optional: true });
-  const references = parseSkillInstructionManifest(manifest);
+  const configuration = parseSkillInstructionConfiguration(manifest, limits);
+  const references = selectSkillInstructionReferences(configuration, context);
   const sections = [root];
   let totalBytes = Buffer.byteLength(root, 'utf8');
   for (const reference of references) {

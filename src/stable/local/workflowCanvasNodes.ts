@@ -2044,9 +2044,25 @@ export function createWorkflowCanvasNodes(
         typeof node.executionState?.runId === 'string' ? node.executionState.runId : undefined;
       if (!runId) return null;
       if (continuePaused && node.executionState?.phase === 'observation-paused') {
-        const run = await client.continueObservation(runId);
+        // A paused view can outlive its backend observation. Read the original
+        // receipt first, so an already completed run never needs a continuation.
+        let run = await client.getRun(runId);
         requireWorkflowScope(scope);
         if (run.runId !== runId) throw new Error('任务回执编号不匹配');
+        if (run.status === 'loading' && run.phase === 'observation-paused') {
+          try {
+            run = await client.continueObservation(runId);
+          } catch (error) {
+            // Another mounted view can resume or finish this task between reads.
+            const latest = await client.getRun(runId);
+            requireWorkflowScope(scope);
+            if (latest.runId !== runId) throw new Error('任务回执编号不匹配');
+            if (latest.status === 'loading' && latest.phase === 'observation-paused') throw error;
+            run = latest;
+          }
+          requireWorkflowScope(scope);
+          if (run.runId !== runId) throw new Error('任务回执编号不匹配');
+        }
         onPatch(runPatch(scope?.getNode?.() ?? node, run));
         if (TERMINAL_STATUSES.has(run.status)) {
           publishExternalOutputs(node, run);

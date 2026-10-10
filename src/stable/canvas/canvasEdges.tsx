@@ -1,13 +1,6 @@
 import type * as ReactTypes from 'react';
 import { memo } from 'react';
-import {
-  edgeFlowSegments,
-  edgeLength,
-  edgePath,
-  edgePhase,
-  type Curve,
-  type Point,
-} from './canvasEdgeGeometry';
+import { edgeLength, edgePath, edgePhase, type Curve, type Point } from './canvasEdgeGeometry';
 type Runtime = Pick<
   typeof ReactTypes,
   'createElement' | 'useState' | 'useMemo' | 'useEffect' | 'useId'
@@ -137,127 +130,68 @@ function createEdgeGeometryCache(geometry: Geometry) {
 }
 
 const EdgeFlow = memo(function EdgeFlow({
-  React,
   edge,
-  edgeIndex,
-  scope,
-  filterId,
   over,
+  paused,
 }: {
-  React: Runtime;
   edge: RenderedEdge;
-  edgeIndex: number;
-  scope: string;
-  filterId: string;
   over: boolean;
+  paused: boolean;
 }) {
-  const [time, setTime] = React.useState(0);
-  React.useEffect(() => {
-    let frame: number | null = null;
-    let disposed = false;
-    const tick = (now: number) => {
-      frame = null;
-      if (disposed || document.hidden) return;
-      setTime(now);
-      frame = requestAnimationFrame(tick);
-    };
-    const visibility = () => {
-      if (disposed) return;
-      if (document.hidden) {
-        if (frame !== null) cancelAnimationFrame(frame);
-        frame = null;
-      } else if (frame === null) frame = requestAnimationFrame(tick);
-    };
-    document.addEventListener('visibilitychange', visibility);
-    visibility();
-    return () => {
-      disposed = true;
-      if (frame !== null) cancelAnimationFrame(frame);
-      document.removeEventListener('visibilitychange', visibility);
-    };
-  }, []);
-  const segments = Array.from({ length: 3 }, (_, index) =>
-    edgeFlowSegments(
-      edge.curve,
-      time / 1000 / 2.5 + edge.phase + index / 3,
-      Math.min(0.16, Math.min(800, Math.max(32, edge.length * 0.5)) / Math.max(edge.length, 1)),
-    ),
-  ).flat();
+  const span = Math.min(
+    0.16,
+    Math.min(800, Math.max(32, edge.length * 0.5)) / Math.max(edge.length, 1),
+  );
+  // Native SVG dashing follows arc length, so a long curve has no parameter-speed
+  // surges. Each static layer repeats three pulses; shorter, brighter layers share
+  // the same head to form a tapered trail without per-frame React/geometry work.
+  const layers = [
+    { fraction: 1, width: 4, opacity: 0.07, core: false },
+    { fraction: 1, width: 2, opacity: 0.15, core: false },
+    { fraction: 0.7, width: 2, opacity: 0.24, core: false },
+    { fraction: 0.44, width: 2, opacity: 0.38, core: false },
+    { fraction: 0.2, width: 2, opacity: 0.9, core: false },
+    { fraction: 0.05, width: 1, opacity: 1, core: true },
+  ];
   return (
     <g
       data-fisherai-edge-flow-tone={over ? 'danger' : 'primary'}
+      data-fisherai-edge-flow-paused={paused ? 'true' : 'false'}
       className="edge-flow-segments pointer-events-none"
+      style={
+        { '--af-edge-flow-play-state': paused ? 'paused' : 'running' } as ReactTypes.CSSProperties
+      }
     >
-      {segments.map((segment, index) => {
-        const prefix = `${scope}-${edgeIndex}-${index}`,
-          outer = `edge-flow-grad-outer-${prefix}`,
-          inner = `edge-flow-grad-inner-${prefix}`;
+      {layers.map((layer, index) => {
+        const length = span * layer.fraction;
         return (
-          <g key={index}>
-            <defs>
-              <linearGradient
-                id={outer}
-                x1={segment.tail.x}
-                y1={segment.tail.y}
-                x2={segment.head.x}
-                y2={segment.head.y}
-                gradientUnits="userSpaceOnUse"
-              >
-                <stop
-                  offset="0%"
-                  stopColor={over ? 'rgba(255, 77, 90, 0)' : 'rgba(59, 130, 246, 0)'}
-                />
-                <stop
-                  offset="62%"
-                  stopColor={over ? 'rgba(255, 77, 90, 0.18)' : 'rgba(59, 130, 246, 0.16)'}
-                />
-                <stop
-                  offset="100%"
-                  stopColor={over ? 'rgba(255, 77, 90, 0.98)' : 'rgba(59, 130, 246, 0.98)'}
-                />
-              </linearGradient>
-              <linearGradient
-                id={inner}
-                x1={segment.tail.x}
-                y1={segment.tail.y}
-                x2={segment.head.x}
-                y2={segment.head.y}
-                gradientUnits="userSpaceOnUse"
-              >
-                <stop
-                  offset="0%"
-                  stopColor={over ? 'rgba(255, 196, 201, 0)' : 'rgba(147, 197, 253, 0)'}
-                />
-                <stop
-                  offset="72%"
-                  stopColor={over ? 'rgba(255, 122, 132, 0.38)' : 'rgba(96, 165, 250, 0.34)'}
-                />
-                <stop
-                  offset="100%"
-                  stopColor={over ? 'rgba(255, 224, 227, 1)' : 'rgba(191, 219, 254, 1)'}
-                />
-              </linearGradient>
-            </defs>
-            <path
-              d={segment.path}
-              stroke={`url(#${outer})`}
-              strokeWidth={2}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              filter={over ? undefined : `url(#${filterId})`}
-              opacity="0.96"
-            />
-            <path
-              d={segment.path}
-              stroke={`url(#${inner})`}
-              strokeWidth={1}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              filter={over ? undefined : `url(#${filterId})`}
-            />
-          </g>
+          <path
+            key={index}
+            className="aifisher-edge-flow-pulse"
+            d={edge.path}
+            pathLength={1}
+            stroke={
+              over
+                ? layer.core
+                  ? 'rgb(255, 224, 227)'
+                  : 'rgb(255, 77, 90)'
+                : layer.core
+                  ? 'rgb(191, 219, 254)'
+                  : 'rgb(59, 130, 246)'
+            }
+            strokeWidth={layer.width}
+            strokeDasharray={`${length} ${1 / 3 - length}`}
+            opacity={layer.opacity}
+            fill="none"
+            strokeLinecap="round"
+            style={
+              {
+                '--af-edge-flow-from': length - edge.phase,
+                '--af-edge-flow-to': length - edge.phase - 1,
+                filter: 'none',
+              } as ReactTypes.CSSProperties
+            }
+          />
         );
       })}
     </g>
@@ -267,8 +201,13 @@ const EdgeFlow = memo(function EdgeFlow({
 export function CanvasEdges(React: Runtime, props: Props, geometry: Geometry) {
   const { getWidth, getHeight, getPortX, getPortY } = geometry;
   const [hovered, setHovered] = React.useState<string | null>(null);
-  const scope = React.useId().replace(/:/g, ''),
-    filterId = `edge-flow-${scope}`;
+  const [flowPaused, setFlowPaused] = React.useState(() => document.hidden);
+  React.useEffect(() => {
+    const visibility = () => setFlowPaused(document.hidden);
+    document.addEventListener('visibilitychange', visibility);
+    visibility();
+    return () => document.removeEventListener('visibilitychange', visibility);
+  }, []);
   const { nodes, viewport, selectedConnection, selectedNodeIds } = props;
   const selected = React.useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
   const byId = React.useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
@@ -367,30 +306,20 @@ export function CanvasEdges(React: Runtime, props: Props, geometry: Geometry) {
       : null;
   return (
     <>
-      <defs>
-        <filter
-          id={filterId}
-          filterUnits="objectBoundingBox"
-          x="-20%"
-          y="-160%"
-          width="140%"
-          height="420%"
-          colorInterpolationFilters="sRGB"
-        >
-          <feGaussianBlur in="SourceGraphic" stdDeviation="2.6" result="blurOuter" />
-          <feFlood floodColor="rgba(59, 130, 246, 0.45)" result="floodOuter" />
-          <feComposite in="blurOuter" in2="floodOuter" operator="in" result="glowOuter" />
-          <feGaussianBlur in="SourceGraphic" stdDeviation="0.95" result="blurInner" />
-          <feFlood floodColor="rgba(147, 197, 253, 0.82)" result="floodInner" />
-          <feComposite in="blurInner" in2="floodInner" operator="in" result="glowInner" />
-          <feMerge>
-            <feMergeNode in="glowOuter" />
-            <feMergeNode in="glowInner" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-      {edges.map((edge, edgeIndex) => {
+      <style>{`
+        @keyframes aifisher-edge-flow {
+          from { stroke-dashoffset: var(--af-edge-flow-from); }
+          to { stroke-dashoffset: var(--af-edge-flow-to); }
+        }
+        .aifisher-edge-flow-pulse {
+          animation: aifisher-edge-flow 2.5s linear infinite;
+          animation-play-state: var(--af-edge-flow-play-state, running);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .aifisher-edge-flow-pulse { animation: none; }
+        }
+      `}</style>
+      {edges.map((edge) => {
         const chosen =
           selectedConnection?.parentId === edge.parentId &&
           selectedConnection.childId === edge.childId &&
@@ -402,8 +331,10 @@ export function CanvasEdges(React: Runtime, props: Props, geometry: Geometry) {
         // Bezier controls may cross the screen even if both endpoint cards are outside it.
         const horizontal = Math.abs(edge.curve.end.x - edge.curve.start.x) / 2;
         const flowVisible =
-          Math.max(edge.curve.start.x + horizontal, edge.curve.end.x) >= (-viewport.x - 32) / zoom &&
-          Math.min(edge.curve.start.x, edge.curve.end.x - horizontal) <= (width - viewport.x + 32) / zoom &&
+          Math.max(edge.curve.start.x + horizontal, edge.curve.end.x) >=
+            (-viewport.x - 32) / zoom &&
+          Math.min(edge.curve.start.x, edge.curve.end.x - horizontal) <=
+            (width - viewport.x + 32) / zoom &&
           Math.max(edge.curve.start.y, edge.curve.end.y) >= (-viewport.y - 32) / zoom &&
           Math.min(edge.curve.start.y, edge.curve.end.y) <= (height - viewport.y + 32) / zoom;
         return (
@@ -470,14 +401,7 @@ export function CanvasEdges(React: Runtime, props: Props, geometry: Geometry) {
               </g>
             </g>
             {(highlighted || over) && flowVisible && (
-              <EdgeFlow
-                React={React}
-                edge={edge}
-                edgeIndex={edgeIndex}
-                scope={scope}
-                filterId={filterId}
-                over={over}
-              />
+              <EdgeFlow edge={edge} over={over} paused={flowPaused} />
             )}
           </g>
         );

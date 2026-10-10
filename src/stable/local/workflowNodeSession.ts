@@ -273,12 +273,22 @@ export function useWorkflowNodeSession(
     const cleanup = snapshot.node.executionState?.inputCleanup;
     const pendingCleanup =
       !!cleanup && typeof cleanup === 'object' && 'state' in cleanup && cleanup.state === 'pending';
-    if (
-      snapshot.node.executionState?.runId &&
-      (snapshot.node.status === 'loading' || pendingCleanup) &&
-      snapshot.node.executionState?.status !== 'observing-paused'
-    )
-      void ownerRef.current?.observe();
+    const paused = snapshot.node.executionState?.status === 'observing-paused';
+    const cloud = snapshot.node.executionTarget === 'cloud';
+    const recover = () => {
+      if (!snapshot.node.executionState?.runId) return;
+      if (paused) {
+        // Cloud generation may finish after an observation window. While its
+        // canvas is visible, reconnect to that same task instead of leaving its
+        // result permanently hidden. Local paused jobs retain manual control.
+        if (cloud && document.visibilityState !== 'hidden') void ownerRef.current?.resume();
+      } else if (snapshot.node.status === 'loading' || pendingCleanup) {
+        void ownerRef.current?.observe();
+      }
+    };
+    recover();
+    document.addEventListener('visibilitychange', recover);
+    return () => document.removeEventListener('visibilitychange', recover);
   }, [
     adapter,
     snapshot.node.id,
@@ -287,6 +297,7 @@ export function useWorkflowNodeSession(
     snapshot.node.executionState?.inputCleanup,
     snapshot.node.executionState?.status,
     snapshot.node.status,
+    snapshot.node.executionTarget,
     definition,
   ]);
   React.useEffect(() => {

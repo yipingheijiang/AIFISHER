@@ -1,4 +1,5 @@
 import { GenerationWaiting } from './GenerationWaiting';
+import { ImageClipboardButton } from './ImageClipboardButton';
 import type * as ReactTypes from 'react';
 import { nearestAspectRatio } from './generationMediaMetadata';
 import { installMediaDownloadFileName } from './mediaDownloadFileName';
@@ -229,6 +230,9 @@ export function CanvasImagePreview(
                 className={'w-full h-full object-cover pointer-events-none'}
               />
             </div>
+            {!busy && <div className="absolute right-2 top-2 z-20 opacity-0 group-hover/image:opacity-100 focus-within:opacity-100" style={selected ? { opacity: 1 } : undefined}>
+              <ImageClipboardButton url={node.resultUrl} />
+            </div>}
             {expanded &&
               urls.slice(1).map((_, S) => (
                 <div
@@ -255,6 +259,7 @@ export function CanvasImagePreview(
                       'absolute top-2 right-2 flex gap-2 opacity-0 group-hover/item:opacity-100 transition-opacity duration-300'
                     }
                   >
+                    <ImageClipboardButton url={_} label={`复制历史图片 ${S + 1}`} />
                     <button
                       onClick={(S) => download(_, S.currentTarget)}
                       aria-label={`下载历史图片 ${S + 1}`}
